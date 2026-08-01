@@ -1,0 +1,81 @@
+plugins {
+    id 'java-library'
+    id 'eclipse'
+    id 'idea'
+    id 'net.neoforged.moddev' version '2.0.141'
+}
+
+version = project.mod_version
+group = project.mod_group_id
+
+base {
+    archivesName = project.mod_id
+}
+
+java.toolchain.languageVersion = JavaLanguageVersion.of(21)
+
+neoForge {
+    version = project.neo_version
+
+    runs {
+        client {
+            client()
+        }
+        server {
+            server()
+            programArgument '--nogui'
+        }
+    }
+
+    mods {
+        "${project.mod_id}" {
+            sourceSet project.sourceSets.main
+        }
+    }
+}
+
+sourceSets.main.resources {
+    srcDir 'src/generated/resources'
+}
+
+dependencies {
+    // NeoForge dependency is added implicitly by the moddev plugin
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+    testImplementation 'com.google.code.gson:gson:2.10.1'
+    testRuntimeOnly 'org.slf4j:slf4j-simple:2.0.16'
+    // authlib is needed for tests that call hasJoined(); its metadata also
+    // supplies transitive runtime dependencies such as Guava.
+    testImplementation 'com.mojang:authlib:6.0.54'
+}
+
+tasks.named('test', Test).configure {
+    useJUnitPlatform()
+}
+
+tasks.withType(ProcessResources).configureEach {
+    var replaceProperties = [
+            minecraft_version   : project.minecraft_version,
+            minecraft_version_range: project.minecraft_version_range,
+            neo_version         : project.neo_version,
+            neo_version_range   : project.neo_version_range,
+            loader_version_range: project.loader_version_range,
+            mod_id              : project.mod_id,
+            mod_name            : project.mod_name,
+            mod_license         : project.mod_license,
+            mod_version         : project.mod_version,
+            mod_authors         : project.mod_authors,
+            mod_description     : project.mod_description,
+    ]
+    inputs.properties replaceProperties
+    filesMatching(['META-INF/neoforge.mods.toml']) {
+        expand replaceProperties
+    }
+}
+
+tasks.named('jar', Jar).configure {
+    manifest {
+        attributes([
+                'MixinConfigs': 'hybridauth.mixins.json'
+        ])
+    }
+}

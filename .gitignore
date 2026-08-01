@@ -1,0 +1,30 @@
+# Gradle and compiled output
+.gradle/
+build/
+bin/
+out/
+
+# IDE and local tooling
+.idea/
+.vscode/
+.eclipse/
+.settings/
+.serena/
+.classpath
+.project
+*.iml
+
+# Local Minecraft test environment
+run/
+
+# Runtime and locally downloaded artifacts
+*.log
+*.pid
+jdk*.zip
+hs_err_pid*
+replay_pid*
+
+# OS metadata
+.DS_Store
+Thumbs.db
+desktop.ini
