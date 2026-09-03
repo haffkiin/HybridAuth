@@ -55,6 +55,17 @@ public class AuthManager {
         return authenticatedPlayers.getOrDefault(uuid, false);
     }
 
+    /** Количество онлайн-игроков, прошедших авторизацию (для /hybridauth status). */
+    public int countAuthenticated() {
+        int count = 0;
+        for (Boolean authenticated : authenticatedPlayers.values()) {
+            if (authenticated) {
+                count++;
+            }
+        }
+        return count;
+    }
+
     public boolean isPremiumPlayer(ServerPlayer player) {
         PlayerData data = storage.load(player.getUUID()).orElse(null);
         return data != null && data.isPremium() && player.getUUID().equals(data.getUuid());
@@ -163,6 +174,10 @@ public class AuthManager {
             player.sendSystemMessage(Component.literal(colorize(ModConfig.SERVER.msgLoginSuccess.get())));
         }
 
+        if ("PREMIUM".equals(method)) {
+            LicenseNotifier.notifyPremiumVerified(player);
+        }
+
         LOGGER.info("[HybridAuth] Player {} ({}) authenticated.", username, data.getType());
     }
 
@@ -181,6 +196,11 @@ public class AuthManager {
 
     private String getRemoteIp(ServerPlayer player) {
         SocketAddress remoteAddress = player.connection.getRemoteAddress();
+        return ipFromSocketAddress(remoteAddress);
+    }
+
+    /** Извлекает IP из адреса соединения; работает и для фазы логина (до создания ServerPlayer). */
+    public static String ipFromSocketAddress(SocketAddress remoteAddress) {
         if (remoteAddress instanceof InetSocketAddress inetSocketAddress) {
             InetAddress address = inetSocketAddress.getAddress();
             if (address != null) {
@@ -189,10 +209,10 @@ public class AuthManager {
             return inetSocketAddress.getHostString();
         }
 
-        return normalizeRemoteAddress(remoteAddress == null ? "" : remoteAddress.toString());
+        return normalizeRemoteAddressStatic(remoteAddress == null ? "" : remoteAddress.toString());
     }
 
-    private String normalizeRemoteAddress(String remoteAddress) {
+    private static String normalizeRemoteAddressStatic(String remoteAddress) {
         String value = remoteAddress == null ? "" : remoteAddress.trim();
         if (value.startsWith("/")) {
             value = value.substring(1);

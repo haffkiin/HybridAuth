@@ -37,7 +37,7 @@ public class MojangApiClient {
     private final String hasJoinedUrl;
     private final Map<String, CachedLookup> profileCache = new ConcurrentHashMap<>();
     private final Map<String, CompletableFuture<PremiumLookupResult>> inFlightLookups = new ConcurrentHashMap<>();
-    private int timeoutMs = 5000;
+    private volatile int timeoutMs = 5000;
     private volatile int cacheExpirationMinutes = 10;
 
     public MojangApiClient() {

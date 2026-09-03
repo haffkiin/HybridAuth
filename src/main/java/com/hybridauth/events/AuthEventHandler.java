@@ -2,6 +2,7 @@ package com.hybridauth.events;
 
 import com.hybridauth.HybridAuthMod;
 import com.hybridauth.auth.AuthManager;
+import com.hybridauth.auth.LicenseNotifier;
 import com.hybridauth.config.ModConfig;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.network.chat.Component;
@@ -23,12 +24,16 @@ import net.neoforged.neoforge.event.tick.PlayerTickEvent;
 
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class AuthEventHandler {
 
     private static final double POSITION_EPSILON_SQ = 1.0E-12D;
+
+    /** Команды, доступные неавторизованному игроку. */
+    private static final Set<String> AUTH_COMMANDS = Set.of("login", "l", "register", "reg", "recover");
 
     private final Map<UUID, Long> lastMessageTime = new ConcurrentHashMap<>();
     private final Map<UUID, AuthLock> authLocks = new ConcurrentHashMap<>();
@@ -47,6 +52,7 @@ public class AuthEventHandler {
             } else {
                 HybridAuthMod.getPremiumSpawnProtection().clear(player);
             }
+            LicenseNotifier.onPlayerJoin(player);
             if (needsAuthProtection(player)) {
                 authLocks.put(player.getUUID(), AuthLock.capture(player));
                 protectUnauthenticatedPlayer(player);
@@ -211,11 +217,7 @@ public class AuthEventHandler {
         }
 
         String rootCommand = command.split("\\s+", 2)[0].toLowerCase(Locale.ROOT);
-        if (!rootCommand.equals("login")
-                && !rootCommand.equals("l")
-                && !rootCommand.equals("register")
-                && !rootCommand.equals("reg")
-                && !rootCommand.equals("recover")) {
+        if (!AUTH_COMMANDS.contains(rootCommand)) {
             event.setCanceled(true);
             sendAuthPrompt(player);
         }

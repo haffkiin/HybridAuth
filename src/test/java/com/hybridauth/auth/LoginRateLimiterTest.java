@@ -48,7 +48,7 @@ class LoginRateLimiterTest {
     }
 
     // ──────────────────────────────────────────────────────────────────────
-    // Different IPs are tracked independently
+    // Different IPs are tracked independently (until the name-level limit trips)
     // ──────────────────────────────────────────────────────────────────────
 
     @Test
@@ -62,7 +62,64 @@ class LoginRateLimiterTest {
             limiter.recordFailure(uuid, "Alice", "1.1.1.1", 3);
         }
         assertFalse(limiter.status(uuid, "Alice", "1.1.1.1", 3).allowed(), "IP1 should be locked");
-        assertTrue(limiter.status(uuid, "Alice", "2.2.2.2", 3).allowed(), "IP2 should be independent, not locked");
+        assertTrue(limiter.status(uuid, "Alice", "2.2.2.2", 3).allowed(),
+                "IP2 should stay allowed while the name-level counter is below its threshold");
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // Name-level limit defeats IP rotation
+    // ──────────────────────────────────────────────────────────────────────
+
+    @Test
+    void nameLevelLockBlocksRotatedIps() {
+        MutableClock clock = new MutableClock();
+        LoginRateLimiter limiter = new LoginRateLimiter(300, 300, clock);
+        UUID uuid = UUID.randomUUID();
+        int nameMaxAttempts = 3 * 3; // maxAttempts * NAME_MAX_ATTEMPTS_MULTIPLIER
+
+        // Атакующий меняет IP на каждую попытку — per-IP лимит не срабатывает,
+        // но глобальный счётчик по имени накапливается
+        for (int i = 0; i < nameMaxAttempts - 1; i++) {
+            assertTrue(limiter.recordFailure(uuid, "Bob", "10.0.0." + i, 3).allowed(),
+                    "Attempt " + i + " from a fresh IP should not be identity-locked");
+        }
+        LoginRateLimiter.Result locked = limiter.recordFailure(uuid, "Bob", "10.0.0.999", 3);
+        assertFalse(locked.allowed(), "Name-level counter should lock after threshold");
+        assertFalse(limiter.status(UUID.randomUUID(), "BOB", "10.9.9.9", 3).allowed(),
+                "Even a different UUID and IP is blocked once the name is locked");
+    }
+
+    @Test
+    void nameLevelLockoutExpires() {
+        MutableClock clock = new MutableClock();
+        LoginRateLimiter limiter = new LoginRateLimiter(300, 300, clock);
+        UUID uuid = UUID.randomUUID();
+
+        for (int i = 0; i < 9; i++) {
+            limiter.recordFailure(uuid, "Carol", "10.0.0." + i, 3);
+        }
+        assertFalse(limiter.status(uuid, "Carol", "10.0.0.100", 3).allowed());
+
+        clock.advanceSeconds(301);
+        assertTrue(limiter.status(uuid, "Carol", "10.0.0.100", 3).allowed(),
+                "Name-level lockout should expire like the identity lockout");
+    }
+
+    @Test
+    void successfulLoginClearsNameLevelCounter() {
+        MutableClock clock = new MutableClock();
+        LoginRateLimiter limiter = new LoginRateLimiter(300, 300, clock);
+        UUID uuid = UUID.randomUUID();
+
+        for (int i = 0; i < 5; i++) {
+            limiter.recordFailure(uuid, "Dave", "10.0.0." + i, 3);
+        }
+        assertTrue(limiter.status(uuid, "Dave", "10.0.0.100", 3).allowed(),
+                "Below the name-level threshold attempts from a new IP stay allowed");
+
+        limiter.clear(uuid, "Dave", "10.0.0.0");
+        assertEquals(0, limiter.status(UUID.randomUUID(), "Dave", "10.0.0.200", 3).attempts(),
+                "Successful login should reset the name-level counter too");
     }
 
     // ──────────────────────────────────────────────────────────────────────

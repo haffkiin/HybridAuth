@@ -1,5 +1,6 @@
 package com.hybridauth.auth;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Locale;
@@ -19,15 +20,24 @@ public class SessionManager {
         private final String ipAddress;
         private final Instant lastSeen;
 
-        private Session(String ipAddress) {
+        private Session(String ipAddress, Instant lastSeen) {
             this.ipAddress = ipAddress;
-            this.lastSeen = Instant.now();
+            this.lastSeen = lastSeen;
         }
     }
 
     private final Map<SessionKey, Session> activeSessions = new ConcurrentHashMap<>();
+    private final Clock clock;
     private int sessionDurationMinutes = 720;
     private boolean enabled = true;
+
+    public SessionManager() {
+        this(Clock.systemUTC());
+    }
+
+    SessionManager(Clock clock) {
+        this.clock = clock;
+    }
 
     public void setSessionDurationMinutes(int sessionDurationMinutes) {
         this.sessionDurationMinutes = sessionDurationMinutes;
@@ -45,7 +55,7 @@ public class SessionManager {
             return;
         }
 
-        activeSessions.put(new SessionKey(uuid, username), new Session(ipAddress));
+        activeSessions.put(new SessionKey(uuid, username), new Session(ipAddress, clock.instant()));
     }
 
     public boolean hasValidSession(String username, UUID uuid, String ipAddress) {
@@ -68,13 +78,17 @@ public class SessionManager {
             return true;
         }
 
-        if (Instant.now().isBefore(session.lastSeen.plus(sessionDurationMinutes, ChronoUnit.MINUTES))) {
+        if (clock.instant().isBefore(session.lastSeen.plus(sessionDurationMinutes, ChronoUnit.MINUTES))) {
             createSession(username, uuid, ipAddress);
             return true;
         }
 
         activeSessions.remove(key);
         return false;
+    }
+
+    public int activeSessionCount() {
+        return activeSessions.size();
     }
 
     public void endSession(String username, UUID uuid) {
