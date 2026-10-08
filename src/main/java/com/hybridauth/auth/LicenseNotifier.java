@@ -20,8 +20,7 @@ public final class LicenseNotifier {
     }
 
     /**
-     * Вызывается при входе игрока: премиум-игроку подтверждаем лицензионный вход,
-     * владельцу cracked-аккаунта с ником, лицензированным в Mojang, показываем предупреждение.
+     * Вызывается при входе игрока: владельцу cracked-аккаунта с ником, лицензированным в Mojang, показываем предупреждение.
      */
     public static void onPlayerJoin(ServerPlayer player) {
         AuthManager authManager = HybridAuthMod.getAuthManager();
@@ -30,7 +29,7 @@ public final class LicenseNotifier {
         }
 
         if (authManager.isPremiumPlayer(player)) {
-            notifyPremiumVerified(player);
+            // Подтверждение входа уже отправил AuthManager.authenticate(PREMIUM)
             return;
         }
 
