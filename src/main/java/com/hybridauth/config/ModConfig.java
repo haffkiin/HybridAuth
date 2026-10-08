@@ -157,7 +157,7 @@ public class ModConfig {
             msgAdminRecoveryCode = builder.define("adminRecoveryCode", "§eОдноразовый код для &f%username%&e: &f%code%");
             msgAdminRecoveryUsage = builder.define("adminRecoveryUsage", "§7Игрок должен использовать /recover <код> <новый пароль> <повтор пароля>.");
             msgDuplicateLogin = builder.define("duplicateLogin", "§cЭтот ник уже играет на сервере с другого адреса. Дождитесь завершения старой сессии или обратитесь в техподдержку.");
-            msgLicensedNameOccupied = builder.define("licensedNameOccupied", "§cЭтот ник принадлежит лицензионному аккаунту.\n§eЕсли это ваш кракнутый аккаунт — войдите с паролем и обратитесь в техподдержку для переноса на другой ник.\n§eЕсли вы владелец лицензии — обратитесь в техподдержку.");
+            msgLicensedNameOccupied = builder.define("licensedNameOccupied", "§cЭтот ник принадлежит лицензионному аккаунту.\n§eЕсли это ваша пиратка — войдите с паролем и обратитесь в техподдержку для переноса на другой ник.\n§eЕсли вы владелец лицензии — обратитесь в техподдержку.");
             msgPasswordCheckPending = builder.define("passwordCheckPending", "§eПроверка пароля уже выполняется, подождите.");
             builder.pop();
         }

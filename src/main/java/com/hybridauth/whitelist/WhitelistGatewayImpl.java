@@ -84,7 +84,7 @@ public final class WhitelistGatewayImpl implements WhitelistGateway {
         return storage.loadByExactUsername(name)
                 .filter(PlayerData::isPremium)
                 .map(premium -> "Ник " + name + " уже принадлежит лицензионному аккаунту "
-                        + premium.getUuid() + ". Кракнутая запись с этим ником конфликтует с владельцем лицензии.")
+                        + premium.getUuid() + ". Пиратка с этим ником конфликтует с владельцем лицензии.")
                 .orElse(null);
     }
 

@@ -44,7 +44,7 @@ public final class HybridIdentityResolver implements IdentityResolver {
         return mojang.checkPremium(name).thenApply(result ->
                 LicensedNameRules.isLicensedExactConflict(name, result.status(), result.canonicalName())
                         ? Optional.of("Ник " + name + " зарегистрирован в Mojang как лицензионный. "
-                        + "Кракнутый аккаунт с этим ником конфликтует с владельцем лицензии.")
+                        + "Пиратка с этим ником конфликтует с владельцем лицензии.")
                         : Optional.empty());
     }
 

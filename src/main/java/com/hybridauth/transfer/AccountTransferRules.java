@@ -30,7 +30,7 @@ public final class AccountTransferRules {
         TARGET_ACCOUNT_EXISTS("На новом нике уже есть аккаунт HybridAuth."),
         TARGET_WORLD_DATA_EXISTS("Для нового ника уже есть данные мира (playerdata, stats или advancements)."),
         TARGET_LIST_CONFLICT("Новый ник конфликтует с whitelist, ops или банами."),
-        TARGET_LICENSED("Новый ник зарегистрирован в Mojang как лицензионный: кракнутый аккаунт на нём не создать."),
+        TARGET_LICENSED("Новый ник зарегистрирован в Mojang как лицензионный: пиратку на нём не создать."),
         TARGET_LICENSE_UNKNOWN("Не удалось проверить новый ник в Mojang. Повторите позже.");
 
         private final String message;
