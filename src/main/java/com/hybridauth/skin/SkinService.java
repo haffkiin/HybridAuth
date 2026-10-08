@@ -101,6 +101,11 @@ public final class SkinService {
         return Optional.empty();
     }
 
+    /** Неудачный запрос не должен задерживать следующую попытку: пауза отсчитывается только от успешной смены. */
+    public void refund(UUID id) {
+        lastRequestAt.remove(id);
+    }
+
     public void end(UUID id) {
         busy.remove(id);
     }

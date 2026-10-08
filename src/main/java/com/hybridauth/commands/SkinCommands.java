@@ -215,6 +215,7 @@ public final class SkinCommands {
         future.whenComplete((entry, failure) -> server.execute(() -> {
             skins.end(target);
             if (failure != null) {
+                skins.refund(target);
                 reply(source, failureMessage(failure, argument));
                 return;
             }

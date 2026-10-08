@@ -164,9 +164,9 @@ public class ModConfig {
                     "Sites allowed for /skin url, e.g. [\"i.imgur.com\", \"*.discordapp.com\"]. Empty list = any public site")
                     .defineListAllowEmpty("urlAllowedDomains", List.of(), () -> "", value -> value instanceof String);
             skinsCooldownSeconds = builder.comment("Pause between /skin nick and /skin reset requests of one player")
-                    .defineInRange("cooldownSeconds", 30, 0, 86400);
+                    .defineInRange("cooldownSeconds", 1, 0, 86400);
             skinsUrlCooldownSeconds = builder.comment("Pause between /skin url requests of one player (MineSkin has limits)")
-                    .defineInRange("urlCooldownSeconds", 120, 0, 86400);
+                    .defineInRange("urlCooldownSeconds", 1, 0, 86400);
             skinsRequestTimeoutSeconds = builder.comment("How long to wait for MineSkin to create a skin")
                     .defineInRange("requestTimeoutSeconds", 45, 10, 300);
             builder.pop();
@@ -193,7 +193,7 @@ public class ModConfig {
             msgSkinUrlDomain = builder.define("urlDomain", "§cС этого сайта скины не принимаются.");
             msgSkinCooldown = builder.define("cooldown", "§eПодождите %seconds% с. перед следующей сменой скина.");
             msgSkinBusy = builder.define("busy", "§eЗапрос скина уже выполняется, подождите.");
-            msgSkinRejected = builder.define("rejected", "§cСервис не принял картинку: %reason%. Нужен PNG-скин 64×64 или 64×32.");
+            msgSkinRejected = builder.define("rejected", "§cСервис не принял картинку: %reason%. Нужна прямая ссылка на PNG-скин 64×64 или 64×32, см. §6/skin help");
             msgSkinRateLimited = builder.define("rateLimited", "§cСервис скинов сейчас перегружен. Попробуйте через несколько минут.");
             msgSkinUnavailable = builder.define("unavailable", "§cСервис скинов недоступен. Попробуйте позже.");
             msgSkinSaveFailed = builder.define("saveFailed", "§eСкин применён, но не сохранился на диск: после выхода он пропадёт. Сообщите администратору.");

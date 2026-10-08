@@ -78,7 +78,7 @@ Cracked players have no skin on an offline server: everyone is Steve or Alex. Hy
 - The chosen skin is saved per UUID in `config/hybridauth/skins.json` (atomic writes, `.bak` copy of the previous file) and applied at every join before the player is announced to others. Changing it while online updates the skin for everyone nearby at once and re-sends the world state to the player (same packet sequence as a respawn that keeps all data).
 - `/hybridauth transfer` moves the skin together with the account; a failed transfer rolls it back.
 - Licensed players are not touched by default (they keep their Mojang skin). They may use `/skin` too, and `/skin reset` restores the skin Mojang gave them at login.
-- Limits: `cooldownSeconds` (30) between `nick`/`reset`, `urlCooldownSeconds` (120) between `url` requests, one request at a time per player, `urlAllowedDomains` (empty = any public site; `localhost`, IP addresses and internal names are always refused), `requestTimeoutSeconds` for MineSkin. Mojang answers are cached for 10 minutes.
+- Limits: `cooldownSeconds` (1) between `nick`/`reset`, `urlCooldownSeconds` (1) between `url` requests, one request at a time per player, `urlAllowedDomains` (empty = any public site; `localhost`, IP addresses and internal names are always refused), `requestTimeoutSeconds` for MineSkin. Mojang answers are cached for 10 minutes.
 - Nothing is fetched automatically by nick: a cracked `ReMure` would otherwise get the skin of the licensed `ReMure`.
 - Messages are in `[skinMessages]`. Audit events: `SKIN_SET`, `SKIN_RESET`.
 
