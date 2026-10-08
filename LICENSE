@@ -1,0 +1,66 @@
+HybridAuth
+Copyright (c) 2026 haffkiin. Все права защищены.
+Copyright (c) 2026 haffkiin. All Rights Reserved.
+
+──────────────────────────────────────────────────────────────────────────────
+RU. Условия использования
+──────────────────────────────────────────────────────────────────────────────
+
+Исходный код, документация и собранные файлы HybridAuth (далее «Программа»)
+принадлежат haffkiin (далее «Автор»). Программа опубликована для ознакомления.
+Публикация исходного кода не является лицензией на его использование.
+
+Без письменного разрешения Автора запрещено:
+
+  1. копировать, распространять и публиковать Программу или её части,
+     в том числе в изменённом виде;
+  2. создавать на её основе производные работы и форки для использования
+     или распространения;
+  3. использовать Программу на серверах, кроме серверов Автора;
+  4. продавать, сдавать в аренду и иным образом коммерчески использовать
+     Программу;
+  5. удалять или изменять уведомления об авторских правах и эти условия.
+
+Разрешено просматривать исходный код и сообщать об ошибках через Issues.
+Создание форка средствами GitHub в пределах, прямо разрешённых Условиями
+использования GitHub, этими условиями не запрещается, но не даёт права
+использовать или распространять Программу.
+
+Программа предоставляется «как есть», без каких-либо гарантий. Автор не несёт
+ответственности за ущерб, возникший в связи с её использованием.
+
+Сторонний код. Часть модуля скинов (порядок пакетов обновления скина
+в классах SkinRefresher, ChunkMapAccessor и TrackedEntityAccessor) адаптирована
+из проекта SkinRestorer (https://github.com/Suiranoil/SkinRestorer),
+© 2021-2024 Lionarius, лицензия MIT. На эту часть распространяется лицензия MIT,
+её текст приведён в файле THIRD_PARTY_NOTICES.md. Остальной код — собственный
+код Автора, на него действуют условия выше.
+
+──────────────────────────────────────────────────────────────────────────────
+EN. Terms of use
+──────────────────────────────────────────────────────────────────────────────
+
+The source code, documentation and built files of HybridAuth (the "Software")
+are owned by haffkiin (the "Author"). The Software is published for viewing
+only. Publishing source code does not grant a license to use it.
+
+Without the Author's prior written permission you may not: (1) copy,
+distribute or publish the Software or parts of it, modified or not;
+(2) create derivative works or forks for use or distribution; (3) run the Software on any server other than the
+Author's; (4) sell, rent or otherwise use the Software commercially;
+(5) remove or alter copyright notices or these terms.
+
+You may view the source code and report issues through the Issues tracker.
+Forking on GitHub within the limits expressly allowed by GitHub's Terms of
+Service is not prohibited by these terms, but grants no right to use or
+distribute the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND. THE AUTHOR IS
+NOT LIABLE FOR ANY DAMAGE ARISING FROM ITS USE.
+
+Third-party code. Part of the skin module (the packet order for refreshing a
+skin in SkinRefresher, ChunkMapAccessor and TrackedEntityAccessor) is adapted
+from SkinRestorer (https://github.com/Suiranoil/SkinRestorer), (c) 2021-2024
+Lionarius, MIT License. That part is covered by the MIT License, whose text is
+in THIRD_PARTY_NOTICES.md. All other code is the Author's own and is covered
+by the terms above.
