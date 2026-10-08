@@ -69,6 +69,9 @@ public class AuthEventHandler {
             if (authManager != null) {
                 authManager.handlePlayerQuit(player);
             }
+            if (HybridAuthMod.getSkinService() != null) {
+                HybridAuthMod.getSkinService().onPlayerQuit(player);
+            }
             lastMessageTime.remove(player.getUUID());
             authLocks.remove(player.getUUID());
             HybridAuthMod.getPremiumSpawnProtection().clear(player);

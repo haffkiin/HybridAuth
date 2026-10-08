@@ -6,7 +6,10 @@
   "mixins": [
     "ServerLoginMixin",
     "ServerGamePacketListenerMixin",
-    "StoredUserEntryAccessor"
+    "StoredUserEntryAccessor",
+    "PlayerListMixin",
+    "ChunkMapAccessor",
+    "TrackedEntityAccessor"
   ],
   "injectors": {
     "defaultRequire": 1

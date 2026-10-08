@@ -10,6 +10,8 @@ import com.hybridauth.auth.MinecraftNames;
 import com.hybridauth.auth.OfflineUuid;
 import com.hybridauth.auth.PremiumLookupResult;
 import com.hybridauth.mixin.StoredUserEntryAccessor;
+import com.hybridauth.skin.SkinEntry;
+import com.hybridauth.skin.SkinStorage;
 import com.hybridauth.storage.PlayerData;
 import com.hybridauth.storage.PlayerStorage;
 import com.hybridauth.transfer.AccountTransferRules.Rejection;
@@ -135,6 +137,7 @@ public final class AccountTransferService {
         lines.add("Файлы мира (playerdata, stats, advancements): "
                 + (files.hasWorldData(fromId) ? "будут перенесены" : "нет"));
         lines.add("Запись HybridAuth (пароль, код восстановления, даты входа): будет перенесена");
+        lines.add("Скин (/skin): " + (HybridAuthMod.getSkinService().storage().get(fromId).isPresent() ? "будет перенесён" : "не выбран"));
         lines.add("Whitelist: " + (findEntry(whitelist.getEntries(), fromId) != null ? "будет перенесён" : "нет"));
         lines.add("Операторы: " + (op != null ? "уровень " + op.getLevel() + ", будет перенесён" : "нет"));
         lines.add("Бан-лист: " + (ban != null ? "будет перенесён" : "нет"));
@@ -165,6 +168,7 @@ public final class AccountTransferService {
             copyIfExists(whitelist.getFile().toPath(), backupDir.resolve(whitelist.getFile().getName()));
             copyIfExists(ops.getFile().toPath(), backupDir.resolve(ops.getFile().getName()));
             copyIfExists(bans.getFile().toPath(), backupDir.resolve(bans.getFile().getName()));
+            copyIfExists(configDir.resolve("hybridauth").resolve("skins.json"), backupDir.resolve("skins.json"));
             if (!storage.createBackup()) {
                 throw new IOException("не удалось создать бэкап players.json");
             }
@@ -181,6 +185,13 @@ public final class AccountTransferService {
             storage.save(copyRecord(source, toId, toName));
             storage.delete(fromId);
             authManager.getSessionManager().endSession(fromName, fromId);
+
+            // 3a. Выбранный скин остаётся у игрока: запись переезжает на новый UUID
+            SkinStorage skins = HybridAuthMod.getSkinService().storage();
+            SkinEntry skinFrom = skins.get(fromId).orElse(null);
+            SkinEntry skinTo = skins.get(toId).orElse(null);
+            undo.push(() -> skins.restore(fromId, skinFrom, toId, skinTo));
+            skins.move(fromId, toId);
 
             // 4. Списки: whitelist, op, бан-лист
             undo.push(() -> restoreList(whitelist, backupDir));

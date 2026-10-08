@@ -7,9 +7,14 @@ import com.hybridauth.api.HybridAuthApi;
 import com.hybridauth.auth.SessionManager;
 import com.hybridauth.audit.AuthAuditLogger;
 import com.hybridauth.commands.AuthCommands;
+import com.hybridauth.commands.SkinCommands;
 import com.hybridauth.config.ModConfig;
 import com.hybridauth.events.AuthEventHandler;
 import com.hybridauth.events.PremiumSpawnProtection;
+import com.hybridauth.skin.MineSkinClient;
+import com.hybridauth.skin.MojangSkinFetcher;
+import com.hybridauth.skin.SkinService;
+import com.hybridauth.skin.SkinStorage;
 import com.hybridauth.storage.JsonPlayerStorage;
 import com.hybridauth.storage.PlayerStorage;
 import com.hybridauth.whitelist.WhitelistGatewayImpl;
@@ -38,9 +43,12 @@ public class HybridAuthMod {
 
     private static AuthManager authManager;
     private static MojangApiClient mojangClient;
+    private static SkinService skinService;
+    private static String modVersion = "dev";
     private static final PremiumSpawnProtection PREMIUM_SPAWN_PROTECTION = new PremiumSpawnProtection();
     
     public HybridAuthMod(IEventBus modEventBus, ModContainer modContainer) {
+        modVersion = modContainer.getModInfo().getVersion().toString();
         LOGGER.info("[HybridAuth] Инициализация мода...");
 
         // Регистрация конфигурации
@@ -66,6 +74,11 @@ public class HybridAuthMod {
         AuthAuditLogger auditLogger = new AuthAuditLogger(FMLPaths.CONFIGDIR.get());
         
         authManager = new AuthManager(storage, sessionManager, auditLogger);
+        skinService = new SkinService(
+                new SkinStorage(FMLPaths.CONFIGDIR.get().resolve("hybridauth")),
+                mojangClient,
+                new MojangSkinFetcher(),
+                new MineSkinClient(modVersion));
         HybridAuthApi.install(new HybridAuthApi(
                 new HybridIdentityResolver(mojangClient),
                 new WhitelistGatewayImpl(storage, auditLogger)));
@@ -78,6 +91,7 @@ public class HybridAuthMod {
         mojangClient.setCacheExpirationMinutes(ModConfig.SERVER.cacheExpirationMinutes.get());
         
         authManager.reloadConfig();
+        applySkinConfig();
 
         if (ModConfig.SERVER.autoRepairVerifiedWhitelist.get()) {
             WhitelistRepairService.repairVerifiedPremiumEntries(
@@ -97,11 +111,15 @@ public class HybridAuthMod {
         if (authManager != null) {
             authManager.shutdown();
         }
+        if (skinService != null) {
+            skinService.mineSkin().shutdown();
+        }
         HybridAuthApi.clear();
     }
 
     private void onRegisterCommands(RegisterCommandsEvent event) {
         AuthCommands.register(event.getDispatcher());
+        SkinCommands.register(event.getDispatcher());
     }
 
     public static AuthManager getAuthManager() {
@@ -110,6 +128,21 @@ public class HybridAuthMod {
 
     public static MojangApiClient getMojangClient() {
         return mojangClient;
+    }
+
+    public static SkinService getSkinService() {
+        return skinService;
+    }
+
+    /** Применяет настройки скинов из конфига (при старте и по /hybridauth reload). */
+    public static void applySkinConfig() {
+        if (skinService == null) {
+            return;
+        }
+        skinService.mineSkin().configure(
+                ModConfig.SERVER.skinsMineskinApiKey.get(),
+                ModConfig.SERVER.skinsRequestTimeoutSeconds.get());
+        skinService.mojangSkins().setTimeoutMs(ModConfig.SERVER.mojangApiTimeoutMs.get());
     }
 
     public static PremiumSpawnProtection getPremiumSpawnProtection() {

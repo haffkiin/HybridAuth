@@ -57,6 +57,7 @@ public class AuthCommands {
                 .requires(source -> source.hasPermission(3))
                 .then(Commands.literal("reload").executes(context -> {
                     HybridAuthMod.getAuthManager().reloadConfig();
+                    HybridAuthMod.applySkinConfig();
                     HybridAuthMod.getMojangClient().setTimeoutMs(ModConfig.SERVER.mojangApiTimeoutMs.get());
                     HybridAuthMod.getMojangClient().setCacheExpirationMinutes(ModConfig.SERVER.cacheExpirationMinutes.get());
                     context.getSource().sendSuccess(
@@ -90,6 +91,7 @@ public class AuthCommands {
                                         context.getSource(),
                                         StringArgumentType.getString(context, "username")))))
                 .then(AccountTransferCommands.build())
+                .then(SkinCommands.buildAdmin())
                 .then(Commands.literal("list").executes(context -> handleAdminList(context.getSource())))
                 .then(Commands.literal("status").executes(context -> handleAdminStatus(context.getSource()))));
     }
