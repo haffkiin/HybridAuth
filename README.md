@@ -50,6 +50,7 @@ Player commands (permission level 0):
 | `/recover <code> <password> <confirm>` | Reset the password with a one-time recovery code |
 | `/skin nick <name>` (`/skin <name>`) | Take the skin of a licensed Mojang account |
 | `/skin url <link> [classic|slim]` | Make a skin from a PNG link (needs a MineSkin key, see [Skins](#skins)) |
+| `/skin model slim|classic` | Change the arm model (slim or wide) of the chosen skin; chat buttons offer this after every change |
 | `/skin reset` | Drop the chosen skin (licensed players get their Mojang skin back) |
 | `/skin info` | Show the chosen skin |
 | `/skin help` | In-game instructions (also shown by `/skin`); the text is the `[skinMessages] help` list |

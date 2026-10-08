@@ -27,8 +27,8 @@ public enum SkinVariant {
             return Optional.empty();
         }
         return switch (text.toLowerCase(Locale.ROOT)) {
-            case "classic", "steve" -> Optional.of(CLASSIC);
-            case "slim", "alex" -> Optional.of(SLIM);
+            case "classic", "steve", "wide", "normal" -> Optional.of(CLASSIC);
+            case "slim", "alex", "thin" -> Optional.of(SLIM);
             case "auto" -> Optional.of(AUTO);
             default -> Optional.empty();
         };

@@ -7,6 +7,7 @@ import com.hybridauth.skin.SkinEntry;
 import com.hybridauth.skin.SkinException;
 import com.hybridauth.skin.SkinRequestRules;
 import com.hybridauth.skin.SkinService;
+import com.hybridauth.skin.SkinTextures;
 import com.hybridauth.skin.SkinVariant;
 import com.hybridauth.storage.PlayerData;
 import com.mojang.brigadier.CommandDispatcher;
@@ -14,7 +15,10 @@ import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
+import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.MutableComponent;
+import net.minecraft.network.chat.Style;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import org.slf4j.Logger;
@@ -50,6 +54,10 @@ public final class SkinCommands {
                         .then(Commands.argument("link", StringArgumentType.greedyString())
                                 .executes(context -> selfUrl(context.getSource(),
                                         StringArgumentType.getString(context, "link")))))
+                .then(Commands.literal("model")
+                        .then(Commands.argument("model", StringArgumentType.word())
+                                .executes(context -> selfModel(context.getSource(),
+                                        StringArgumentType.getString(context, "model")))))
                 .then(Commands.literal("reset").executes(context -> selfReset(context.getSource())))
                 .then(Commands.literal("info").executes(context -> selfInfo(context.getSource())))
                 // Короткая форма: /skin <ник>
@@ -66,6 +74,11 @@ public final class SkinCommands {
                                 StringArgumentType.getString(context, "account"))))
                         .then(Commands.literal("info").executes(context -> adminInfo(context.getSource(),
                                 StringArgumentType.getString(context, "account"))))
+                        .then(Commands.literal("model")
+                                .then(Commands.argument("model", StringArgumentType.word())
+                                        .executes(context -> adminModel(context.getSource(),
+                                                StringArgumentType.getString(context, "account"),
+                                                StringArgumentType.getString(context, "model")))))
                         .then(Commands.literal("nick")
                                 .then(Commands.argument("nick", StringArgumentType.word())
                                         .executes(context -> adminNick(context.getSource(),
@@ -95,6 +108,11 @@ public final class SkinCommands {
     private static int selfUrl(CommandSourceStack source, String text) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
         ServerPlayer player = authenticatedPlayer(source);
         return player == null ? 0 : requestUrl(source, player.getUUID(), text, false);
+    }
+
+    private static int selfModel(CommandSourceStack source, String model) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        ServerPlayer player = authenticatedPlayer(source);
+        return player == null ? 0 : requestModel(source, player.getUUID(), model, false);
     }
 
     private static int selfReset(CommandSourceStack source) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
@@ -128,6 +146,11 @@ public final class SkinCommands {
     private static int adminUrl(CommandSourceStack source, String account, String text) {
         Optional<PlayerData> data = findAccount(source, account);
         return data.isEmpty() ? 0 : requestUrl(source, data.get().getUuid(), text, true);
+    }
+
+    private static int adminModel(CommandSourceStack source, String account, String model) {
+        Optional<PlayerData> data = findAccount(source, account);
+        return data.isEmpty() ? 0 : requestModel(source, data.get().getUuid(), model, true);
     }
 
     private static int adminReset(CommandSourceStack source, String account) {
@@ -188,6 +211,66 @@ public final class SkinCommands {
                 args.url(), () -> skins.fetchByUrl(args.url(), args.variant()));
     }
 
+    /**
+     * Меняет модель рук у уже выбранного скина: тот же рисунок заново отправляется в MineSkin с нужной моделью.
+     * Работает и для скина по нику: его адрес берётся из текстуры.
+     */
+    private static int requestModel(CommandSourceStack source, UUID target, String text, boolean admin) {
+        if (!ModConfig.SERVER.skinsEnabled.get()) {
+            reply(source, ModConfig.SERVER.msgSkinDisabled.get());
+            return 0;
+        }
+        SkinService skins = HybridAuthMod.getSkinService();
+        if (!ModConfig.SERVER.skinsUrlEnabled.get() || !skins.mineSkin().isConfigured()) {
+            reply(source, ModConfig.SERVER.msgSkinUrlUnavailable.get());
+            return 0;
+        }
+        Optional<SkinVariant> variant = SkinVariant.parse(text).filter(value -> value != SkinVariant.AUTO);
+        if (variant.isEmpty()) {
+            reply(source, ModConfig.SERVER.msgSkinModelUsage.get());
+            return 0;
+        }
+        Optional<SkinEntry> current = skins.storage().get(target);
+        if (current.isEmpty()) {
+            reply(source, ModConfig.SERVER.msgSkinNone.get());
+            return 0;
+        }
+        if (current.get().variant() == variant.get()) {
+            reply(source, ModConfig.SERVER.msgSkinModelSame.get().replace("%model%", modelName(variant.get())));
+            return 0;
+        }
+        Optional<SkinTextures.Info> info = SkinTextures.inspect(current.get().property().value());
+        if (info.isEmpty()) {
+            reply(source, ModConfig.SERVER.msgSkinUnavailable.get());
+            return 0;
+        }
+        SkinEntry old = current.get();
+        return runFetch(source, target, admin, ModConfig.SERVER.skinsUrlCooldownSeconds.get(), true,
+                info.get().skinUrl(),
+                () -> skins.fetchByUrl(info.get().skinUrl(), variant.get()).thenApply(fresh -> new SkinEntry(
+                        old.source(), old.argument(), variant.get(), fresh.property(), fresh.updatedAt())));
+    }
+
+    /** Название модели рук для игрока (из конфига). */
+    private static String modelName(SkinVariant variant) {
+        return variant == SkinVariant.SLIM
+                ? ModConfig.SERVER.msgSkinModelSlim.get()
+                : ModConfig.SERVER.msgSkinModelClassic.get();
+    }
+
+    /** Строка «Руки: ... Сменить: [тонкие] [обычные]» с кнопками, которые выполняют /skin model. */
+    private static void sendModelHint(CommandSourceStack source, SkinVariant current) {
+        MutableComponent line = Component.literal(
+                colorize(ModConfig.SERVER.msgSkinModelHint.get().replace("%model%", modelName(current))));
+        line.append(modelButton(SkinVariant.SLIM)).append(Component.literal(" ")).append(modelButton(SkinVariant.CLASSIC));
+        source.sendSystemMessage(line);
+    }
+
+    private static MutableComponent modelButton(SkinVariant variant) {
+        return Component.literal(colorize("§e[" + modelName(variant) + "]")).withStyle(Style.EMPTY
+                .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/skin model " + variant.apiName())));
+    }
+
     /** Резервирует запрос, получает скин в фоне и применяет его на потоке сервера. */
     private static int runFetch(CommandSourceStack source, UUID target, boolean admin, int cooldownSeconds,
                                 boolean slow, String argument, Supplier<CompletableFuture<SkinEntry>> fetch) {
@@ -226,6 +309,9 @@ public final class SkinCommands {
             if (!saved) {
                 reply(source, ModConfig.SERVER.msgSkinSaveFailed.get());
             }
+            if (!admin && skins.mineSkin().isConfigured()) {
+                sendModelHint(source, entry.variant());
+            }
         }));
         return 1;
     }
@@ -259,7 +345,7 @@ public final class SkinCommands {
         }
         String line = ModConfig.SERVER.msgSkinInfo.get()
                 .replace("%source%", describe(entry.get()))
-                .replace("%variant%", entry.get().variant().name().toLowerCase(Locale.ROOT));
+                .replace("%variant%", modelName(entry.get().variant()));
         reply(source, line);
         return 1;
     }

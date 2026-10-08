@@ -61,6 +61,11 @@ public class ModConfig {
         public final ModConfigSpec.ConfigValue<String> msgSkinNothingToReset;
         public final ModConfigSpec.ConfigValue<String> msgSkinInfo;
         public final ModConfigSpec.ConfigValue<String> msgSkinNone;
+        public final ModConfigSpec.ConfigValue<String> msgSkinModelHint;
+        public final ModConfigSpec.ConfigValue<String> msgSkinModelSlim;
+        public final ModConfigSpec.ConfigValue<String> msgSkinModelClassic;
+        public final ModConfigSpec.ConfigValue<String> msgSkinModelSame;
+        public final ModConfigSpec.ConfigValue<String> msgSkinModelUsage;
         public final ModConfigSpec.ConfigValue<String> msgSkinNickNotFound;
         public final ModConfigSpec.ConfigValue<String> msgSkinUrlUnavailable;
         public final ModConfigSpec.ConfigValue<String> msgSkinUrlInvalid;
@@ -176,7 +181,7 @@ public class ModConfig {
                     .defineListAllowEmpty("help", List.of(
                             "§6§lСкины",
                             "§e/skin <ник> §7— скин любого лицензионного игрока (ники можно смотреть на namemc.com).",
-                            "§e/skin url <ссылка> §7— свой скин из картинки PNG 64×64. Для тонких рук добавьте в конце §eslim§7.",
+                            "§e/skin url <ссылка> §7— свой скин из картинки PNG 64×64. Руки: добавьте в конце §eslim§7 (тонкие) или §eclassic§7 (обычные). Потом можно поменять: §e/skin model slim§7 или §e/skin model classic§7.",
                             "§7Как получить ссылку: загрузите файл скина на §fimgur.com§7 или §fpostimages.org§7, либо отправьте его в Discord, и скопируйте ссылку на картинку. Ссылка должна вести прямо на PNG-файл.",
                             "§e/skin reset §7— убрать скин, §e/skin info §7— что выбрано. Между сменами есть небольшая пауза."),
                             () -> "", value -> value instanceof String);
@@ -187,6 +192,11 @@ public class ModConfig {
             msgSkinNothingToReset = builder.define("nothingToReset", "§7Свой скин не выбран, сбрасывать нечего.");
             msgSkinInfo = builder.define("info", "§eСкин: §f%source% §7(%variant%)");
             msgSkinNone = builder.define("none", "§7Свой скин не выбран.");
+            msgSkinModelHint = builder.define("modelHint", "§7Руки: §f%model%§7. Сменить: ");
+            msgSkinModelSlim = builder.define("modelSlim", "тонкие");
+            msgSkinModelClassic = builder.define("modelClassic", "обычные");
+            msgSkinModelSame = builder.define("modelSame", "§7У этого скина уже выбраны %model% руки.");
+            msgSkinModelUsage = builder.define("modelUsage", "§eИспользование: §6/skin model slim §e(тонкие руки) или §6/skin model classic §e(обычные).");
             msgSkinNickNotFound = builder.define("nickNotFound", "§cЛицензионный аккаунт с ником %nick% не найден или у него нет скина.");
             msgSkinUrlUnavailable = builder.define("urlUnavailable", "§cСкин по ссылке на этом сервере не настроен. Используйте §6/skin nick <ник>§c.");
             msgSkinUrlInvalid = builder.define("urlInvalid", "§cНекорректная ссылка. Нужна прямая ссылка http(s) на PNG-картинку скина. Подробнее: §6/skin help");

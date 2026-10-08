@@ -48,7 +48,9 @@ class SkinTexturesAndVariantTest {
         assertEquals(Optional.of(SkinVariant.SLIM), SkinVariant.parse("alex"));
         assertEquals(Optional.of(SkinVariant.CLASSIC), SkinVariant.parse("Classic"));
         assertEquals(Optional.of(SkinVariant.AUTO), SkinVariant.parse("auto"));
-        assertEquals(Optional.empty(), SkinVariant.parse("wide"));
+        assertEquals(Optional.of(SkinVariant.CLASSIC), SkinVariant.parse("wide"));
+        assertEquals(Optional.of(SkinVariant.SLIM), SkinVariant.parse("thin"));
+        assertEquals(Optional.empty(), SkinVariant.parse("big"));
         assertEquals(Optional.empty(), SkinVariant.parse(null));
         assertEquals("unknown", SkinVariant.AUTO.apiName());
         assertTrue(SkinVariant.fromTextureModel("slim") == SkinVariant.SLIM);
