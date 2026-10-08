@@ -1,4 +1,4 @@
-# HybridAuth 1.2.0
+# HybridAuth 1.3.0
 
 Server-only hybrid authentication for NeoForge 1.21.1. The server remains `online-mode=false`: premium accounts authenticate through Mojang session verification, while cracked accounts use the existing password/recovery flow.
 
@@ -110,7 +110,7 @@ The public HybridAuth API exposes identity resolution and server-thread whitelis
 
 The `AccountTransfers` registry is a second extension point for other mods (see [Account transfer](#account-transfer)).
 
-## Changelog Unreleased
+## Changelog 1.3.0
 
 - **Security**: duplicate logins by nick are rejected when the online session is authenticated and comes from another address (`duplicateLogin`). Previously vanilla kicked it before HybridAuth could check anything.
 - **Security**: a cracked record on a nick that is licensed on Mojang no longer lets the licensed owner in. The owner gets the `licensedNameOccupied` prompt and timeout message. Before, the owner was routed into the cracked record without a Mojang check. The cracked owner keeps logging in with the password until the account is moved.
