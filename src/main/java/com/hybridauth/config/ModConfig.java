@@ -79,6 +79,9 @@ public class ModConfig {
         public final ModConfigSpec.ConfigValue<String> msgAdminPremiumNoRecovery;
         public final ModConfigSpec.ConfigValue<String> msgAdminRecoveryCode;
         public final ModConfigSpec.ConfigValue<String> msgAdminRecoveryUsage;
+        public final ModConfigSpec.ConfigValue<String> msgDuplicateLogin;
+        public final ModConfigSpec.ConfigValue<String> msgLicensedNameOccupied;
+        public final ModConfigSpec.ConfigValue<String> msgPasswordCheckPending;
 
         public ServerConfig(ModConfigSpec.Builder builder) {
             builder.push("general");
@@ -108,8 +111,10 @@ public class ModConfig {
             loginLockoutSeconds = builder.comment("Lockout after too many failed attempts")
                     .defineInRange("loginLockoutSeconds", 300, 30, 86400);
             authTimeoutSeconds = builder.comment("Time to login/register before kick (0 = disabled)").defineInRange("authTimeoutSeconds", 60, 0, 600);
-            enableIpSession = builder.comment("Remember IP to avoid entering password every time").define("enableIpSession", true);
-            sessionDurationMinutes = builder.comment("IP session duration in minutes (0 = until server restart)").defineInRange("sessionDurationMinutes", 720, 0, Integer.MAX_VALUE);
+            enableIpSession = builder.comment("Remember IP to avoid entering password every time. Disable on servers with many shared IPs (NAT, mobile operators)")
+                    .define("enableIpSession", true);
+            sessionDurationMinutes = builder.comment("IP session lifetime in minutes, counted from the last password/license login. Not extended by use. (0 = until server restart)")
+                    .defineInRange("sessionDurationMinutes", 720, 0, Integer.MAX_VALUE);
             builder.pop();
 
             builder.push("messages");
@@ -151,6 +156,9 @@ public class ModConfig {
             msgAdminPremiumNoRecovery = builder.define("adminPremiumNoRecovery", "§cУ премиум-аккаунтов нет кодов восстановления.");
             msgAdminRecoveryCode = builder.define("adminRecoveryCode", "§eОдноразовый код для &f%username%&e: &f%code%");
             msgAdminRecoveryUsage = builder.define("adminRecoveryUsage", "§7Игрок должен использовать /recover <код> <новый пароль> <повтор пароля>.");
+            msgDuplicateLogin = builder.define("duplicateLogin", "§cЭтот ник уже играет на сервере с другого адреса. Дождитесь завершения старой сессии или обратитесь в техподдержку.");
+            msgLicensedNameOccupied = builder.define("licensedNameOccupied", "§cЭтот ник принадлежит лицензионному аккаунту.\n§eЕсли это ваш кракнутый аккаунт — войдите с паролем и обратитесь в техподдержку для переноса на другой ник.\n§eЕсли вы владелец лицензии — обратитесь в техподдержку.");
+            msgPasswordCheckPending = builder.define("passwordCheckPending", "§eПроверка пароля уже выполняется, подождите.");
             builder.pop();
         }
     }

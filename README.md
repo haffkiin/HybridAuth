@@ -25,7 +25,9 @@ The Mojang profile cache is bounded and shared by login and Discord whitelist re
 
 ## Case policy
 
-Cracked records use the exact entered case. An exact registered cracked name is checked before Mojang's case-insensitive lookup, allowing a deliberate pair such as `ReMure` (premium) and `remure` (cracked). The licensed player must use the canonical Mojang case. Exact-name and UUID conflicts are never silently merged.
+Cracked records use the exact entered case. A deliberate pair such as `ReMure` (premium) and `remure` (cracked) is allowed. The licensed player must use the canonical Mojang case. Exact-name and UUID conflicts are never silently merged.
+
+If a cracked record already holds the exact canonical licensed nick (`ReMure`), the cracked owner keeps logging in with the password. The licensed owner cannot enter: the cracked record is not replaced, and the login prompt and timeout message show `licensedNameOccupied`. That message tells the cracked owner to move the account and the licensed owner to contact support. Support moves the cracked account with `/hybridauth transfer` (see below), after which the licensed owner can enter. (Not yet verified on a live server.)
 
 ## License nick visibility
 
@@ -58,19 +60,66 @@ Admin commands (permission level 3):
 | `/hybridauth unregister <username>` | Delete an account; a backup is created automatically, online player is kicked |
 | `/hybridauth list` | List all accounts (capped output) |
 | `/hybridauth status` | Account totals, premium/cracked split, active sessions, authenticated players online |
+| `/hybridauth transfer <old> <new>` | Preview moving a cracked account to a new nick (nothing changes) |
+| `/hybridauth transfer <old> <new> confirm` | Move the account to the new nick; see [Account transfer](#account-transfer) |
 
 ## Security notes
 
-- Passwords are hashed with PBKDF2-HmacSHA256 at **310,000 iterations**. Older records (e.g. 65,536 iterations) remain valid and are transparently re-hashed on the next successful login.
-- Rate limiting is two-level: identity (`uuid|name|ip`) locks after `maxLoginAttempts` failures, and a global per-name counter (3× the threshold) blocks brute-force attempts even when the attacker rotates IPs.
-- Failed attempts count for unregistered names too, so username probing is also throttled.
+- Passwords are hashed with PBKDF2-HmacSHA256 at **310,000 iterations**. Older records (e.g. 65,536 iterations) remain valid and are transparently re-hashed on the next successful login. Hashing runs on a separate thread pool, not on the server thread.
+- Rate limiting is two-level: identity (`uuid|name|ip`) locks after `maxLoginAttempts` failures, and a global per-name counter (3× the threshold) blocks brute-force attempts even when the attacker rotates IPs. The address of the last successful login for that name is exempt from the per-name lock, so an attacker cannot lock the owner out from the owner's own address. The identity lock still applies to it.
+- Failed attempts count for unregistered names too, so username probing is also throttled. `/recover` answers the same way for unregistered names and for wrong codes.
 - Login names are validated (`[A-Za-z0-9_]{3,16}`) in the login phase before any Mojang request, because the mod replaces the vanilla handshake.
+- Protocol order is enforced: a hello or key packet received in the wrong login state disconnects the client.
+- Duplicate logins: vanilla kicks the online session with the same UUID before the login completes. A cracked newcomer from a different address is rejected while an authenticated session is online. The newcomer is not allowed to kick it. A reconnect from the same address still replaces the stale session, and a Mojang-verified premium login is never rejected this way.
 - Audit log (`config/hybridauth/logs/auth.log`) rotates by size (5 MB) and keeps up to 5 archives.
-- Sessions remain IP-bound: the same IP that authenticated may resume without a password until the session expires. This is safe on dedicated IPs; beware shared NATs/proxies.
+- IP sessions: the session lifetime is counted from the last password or license login (`sessionDurationMinutes`, default 720). Using the session does not extend it. The session is bound to the IP. On shared NATs or mobile carriers, anyone on the same IP can resume the session until it expires. Set `enableIpSession = false` if that matters for your players.
+- `/hybridauth unregister` and `/hybridauth info` match the exact nick only. If the nick is not found but a case variant exists, the command reports it. `unregister` aborts if the backup cannot be created.
+
+## Account transfer
+
+`/hybridauth transfer <old> <new>` moves a cracked account to a new nick. Use it to free a nick that a licensed owner now holds, for example when support resolves a cracked record on a nick that was later claimed on Mojang. The command first shows a preview. `confirm` runs the transfer.
+
+Both players must be offline. The old account must be a cracked account. The new nick must be valid, must not be licensed on Mojang (if Mojang cannot be reached, the transfer is refused), and must not already have an account, world data, or a whitelist/op/ban conflict.
+
+What is moved:
+
+- **Auth record**: the password hash, recovery code hash, and login dates, under the new UUID.
+- **World data**: `playerdata/<uuid>.dat` (the `UUID` field is rewritten), `.dat_old`, `stats/<uuid>.json`, `advancements/<uuid>.json`. This includes inventory, position, experience, and mod attachments stored in the player file.
+- **Whitelist, ops (with level), and ban list entries**.
+- **Data of other mods**: handled through `com.hybridauth.api.AccountTransfers` (see below). HybridAuth does not know these files.
+
+Safety: before any change, the affected files and lists are copied to `config/hybridauth/backups/transfer-<timestamp>-<old>-to-<new>/`, and `players.json` gets a backup as well. If any step fails, the completed steps are rolled back in reverse order. The backup stays on disk.
+
+### Handlers for other mods
+
+```java
+AccountTransfers.register(new AccountTransferHandler() {
+    public String name() { return "SMPIdentity"; }
+    public Runnable transfer(AccountTransferPlan plan) throws Exception {
+        // move this mod's data keyed by plan.fromId() to plan.toId()
+        return () -> { /* undo: restore the old keys */ };
+    }
+});
+```
+
+The handler runs on the server thread with both accounts offline. It must either finish or throw without leaving changes behind, and it returns a `Runnable` that undoes its work. If a later step fails, that `Runnable` is called.
 
 ## Commands and API
 
 The public HybridAuth API exposes identity resolution and server-thread whitelist operations to the Discord companion. HybridAuth has no dependency on Discord or JDA; if the Discord bot is disabled, Minecraft authentication is unaffected.
+
+The `AccountTransfers` registry is a second extension point for other mods (see [Account transfer](#account-transfer)).
+
+## Changelog Unreleased
+
+- **Security**: duplicate logins by nick are rejected when the online session is authenticated and comes from another address (`duplicateLogin`). Previously vanilla kicked it before HybridAuth could check anything.
+- **Security**: a cracked record on a nick that is licensed on Mojang no longer lets the licensed owner in. The owner gets the `licensedNameOccupied` prompt and timeout message. Before, the owner was routed into the cracked record without a Mojang check. The cracked owner keeps logging in with the password until the account is moved.
+- **New**: `/hybridauth transfer <old> <new> [confirm]` moves a cracked account (auth record, world data, whitelist, ops, bans) to a new nick, with a preview, backups, and rollback. The `AccountTransfers` API lets other mods move their data too.
+- **Security**: IP sessions no longer extend on use (absolute lifetime).
+- **Security**: the per-name lock no longer blocks the last successful login address.
+- **Security**: `/recover` throttles unknown nicks. Protocol state is checked in the login mixins.
+- **Fixes**: whitelist repair matches the nick exactly (case variants are kept). Admin `info`/`unregister` no longer fall back to case-insensitive matches. `unregister` aborts without a backup. Password hashing runs off the server thread. A second password operation for the same player is refused while one is pending (`passwordCheckPending`).
+- **New**: `WhitelistGateway.AddOutcome.warning` and `IdentityResolver.licensedNickWarning` warn when a cracked nick matches a licensed account.
 
 ## Changelog 1.2.0
 

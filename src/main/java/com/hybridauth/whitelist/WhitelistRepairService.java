@@ -2,7 +2,6 @@ package com.hybridauth.whitelist;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
-import com.hybridauth.auth.OfflineUuid;
 import com.hybridauth.storage.PlayerData;
 import com.hybridauth.storage.PlayerStorage;
 import com.mojang.authlib.GameProfile;
@@ -51,11 +50,18 @@ public final class WhitelistRepairService {
 
             List<UserWhiteListEntry> stale = entries.stream()
                     .filter(entry -> WhitelistEntries.profile(entry) != null)
-                    .filter(entry -> WhitelistEntries.profile(entry).getName().equalsIgnoreCase(premium.getUsername()))
-                    .filter(entry -> !premium.getUuid().equals(WhitelistEntries.profile(entry).getId()))
-                    .filter(entry -> OfflineUuid.forName(WhitelistEntries.profile(entry).getName()).equals(WhitelistEntries.profile(entry).getId()))
-                    .filter(entry -> storage.loadByExactUsername(WhitelistEntries.profile(entry).getName())
-                            .map(PlayerData::isCracked).orElse(false) == false)
+                    .filter(entry -> {
+                        GameProfile profile = WhitelistEntries.profile(entry);
+                        boolean crackedRecordExists = storage.loadByExactUsername(profile.getName())
+                                .map(PlayerData::isCracked)
+                                .orElse(false);
+                        return WhitelistRepairRules.isStaleOfflineEntry(
+                                profile.getName(),
+                                profile.getId(),
+                                premium.getUsername(),
+                                premium.getUuid(),
+                                crackedRecordExists);
+                    })
                     .toList();
 
             if (stale.isEmpty()) {

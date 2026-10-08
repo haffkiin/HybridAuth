@@ -260,6 +260,61 @@ class LoginRateLimiterTest {
     }
 
     // ──────────────────────────────────────────────────────────────────────
+    // Name-level lock exemption for the last successful address
+    // ──────────────────────────────────────────────────────────────────────
+
+    @Test
+    void nameLockDoesNotBlockLastSuccessfulAddress() {
+        MutableClock clock = new MutableClock();
+        LoginRateLimiter limiter = new LoginRateLimiter(300, 300, clock);
+        UUID uuid = UUID.randomUUID();
+
+        // Атакующий с трёх адресов набирает общий лимит по нику (3 * 5 = 15)
+        for (String attackerIp : new String[]{"10.0.0.2", "10.0.0.3", "10.0.0.4"}) {
+            for (int i = 0; i < 5; i++) {
+                limiter.recordFailure(uuid, "Steve", attackerIp, 5);
+            }
+        }
+        assertFalse(limiter.status(uuid, "Steve", "10.0.0.9", 5).allowed(),
+                "Чужой адрес блокируется общим локом по нику");
+        assertTrue(limiter.status(uuid, "Steve", "10.0.0.1", 5, true).allowed(),
+                "Адрес последнего успешного входа не блокируется общим локом");
+    }
+
+    @Test
+    void exemptAddressStillSubjectToIdentityLock() {
+        MutableClock clock = new MutableClock();
+        LoginRateLimiter limiter = new LoginRateLimiter(300, 300, clock);
+        UUID uuid = UUID.randomUUID();
+
+        for (int i = 0; i < 5; i++) {
+            limiter.recordFailure(uuid, "Steve", "10.0.0.1", 5, true);
+        }
+        assertFalse(limiter.status(uuid, "Steve", "10.0.0.1", 5, true).allowed(),
+                "Личный лок identity действует и для исключённого адреса");
+    }
+
+    @Test
+    void exemptFailuresStillCountTowardNameLevelCounter() {
+        MutableClock clock = new MutableClock();
+        LoginRateLimiter limiter = new LoginRateLimiter(300, 300, clock);
+        UUID uuid = UUID.randomUUID();
+
+        // Попытки с исключённого адреса не должны обнулять общий счётчик: атаки с других адресов
+        // продолжают учитываться (блокировать владельца через свой же адрес они при этом не могут)
+        for (int i = 0; i < 5; i++) {
+            limiter.recordFailure(uuid, "Steve", "10.0.0.1", 5, true);
+        }
+        for (String attackerIp : new String[]{"10.0.0.2", "10.0.0.3", "10.0.0.4"}) {
+            for (int i = 0; i < 5; i++) {
+                limiter.recordFailure(uuid, "Steve", attackerIp, 5);
+            }
+        }
+        assertFalse(limiter.status(uuid, "Steve", "10.0.0.9", 5).allowed(),
+                "Общий счётчик по нику учитывает попытки со всех адресов");
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
     // Helper
     // ──────────────────────────────────────────────────────────────────────
 

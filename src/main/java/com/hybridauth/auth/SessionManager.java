@@ -16,13 +16,18 @@ public class SessionManager {
         }
     }
 
+    /**
+     * Сессия живёт фиксированное время от момента создания (вход по паролю/лицензии).
+     * Использование сессии её не продлевает: иначе при общем IP (NAT, мобильные операторы)
+     * вход без пароля становился бы бессрочным.
+     */
     private static class Session {
         private final String ipAddress;
-        private final Instant lastSeen;
+        private final Instant createdAt;
 
-        private Session(String ipAddress, Instant lastSeen) {
+        private Session(String ipAddress, Instant createdAt) {
             this.ipAddress = ipAddress;
-            this.lastSeen = lastSeen;
+            this.createdAt = createdAt;
         }
     }
 
@@ -78,8 +83,7 @@ public class SessionManager {
             return true;
         }
 
-        if (clock.instant().isBefore(session.lastSeen.plus(sessionDurationMinutes, ChronoUnit.MINUTES))) {
-            createSession(username, uuid, ipAddress);
+        if (clock.instant().isBefore(session.createdAt.plus(sessionDurationMinutes, ChronoUnit.MINUTES))) {
             return true;
         }
 

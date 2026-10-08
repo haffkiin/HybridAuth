@@ -1,9 +1,13 @@
 package com.hybridauth.mixin;
 
 import com.hybridauth.HybridAuthMod;
-import com.hybridauth.config.ModConfig;
+import com.hybridauth.auth.AuthManager;
+import com.hybridauth.auth.DuplicateLoginRules;
+import com.hybridauth.auth.LicensedNameRules;
 import com.hybridauth.auth.MinecraftNames;
 import com.hybridauth.auth.OfflineUuid;
+import com.hybridauth.auth.PremiumLookupResult;
+import com.hybridauth.config.ModConfig;
 import com.hybridauth.storage.PlayerData;
 import com.mojang.authlib.GameProfile;
 import net.minecraft.network.Connection;
@@ -12,6 +16,7 @@ import net.minecraft.network.protocol.login.ClientboundHelloPacket;
 import net.minecraft.network.protocol.login.ServerboundHelloPacket;
 import net.minecraft.network.protocol.login.ServerboundKeyPacket;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.network.ServerLoginPacketListenerImpl;
 import net.minecraft.util.Crypt;
 import org.spongepowered.asm.mixin.Final;
@@ -25,6 +30,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import java.math.BigInteger;
 import java.security.PrivateKey;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -37,6 +43,9 @@ import java.util.UUID;
  * Реальные значения State в NeoForge 21.1.x:
  * HELLO, KEY, AUTHENTICATING, NEGOTIATING, VERIFYING,
  * WAITING_FOR_DUPE_DISCONNECT, PROTOCOL_SWITCHING, ACCEPTED
+ *
+ * Отмена ванильных handleHello/handleKey отключает и их проверки состояния
+ * (Validate.validState), поэтому состояние проверяется здесь вручную.
  */
 @Mixin(ServerLoginPacketListenerImpl.class)
 public abstract class ServerLoginMixin {
@@ -64,11 +73,14 @@ public abstract class ServerLoginMixin {
     private volatile String hybridAuth_username;
     @Unique
     private volatile byte[] hybridAuth_challenge;
+    /** Личность подтверждена Mojang (hasJoined). */
+    @Unique
+    private volatile boolean hybridAuth_verifiedPremium;
+    @Unique
+    private volatile boolean hybridAuth_duplicateRejected;
 
     /**
      * Перехватываем handleHello в самом начале (HEAD) и отменяем ванильную логику.
-     * Это нужно потому что при online-mode=false ванила сразу вызывает startClientVerification,
-     * что ломает наш flow управления состоянием.
      *
      * Наш flow:
      * 1. Валидируем ник (мы отменили ванилу, её проверки больше не выполняются)
@@ -87,6 +99,11 @@ public abstract class ServerLoginMixin {
         // Отменяем ванильный handleHello — сами управляем всем
         ci.cancel();
 
+        if (state != ServerLoginPacketListenerImpl.State.HELLO) {
+            protocolError();
+            return;
+        }
+
         String username = packet.name();
         if (!MinecraftNames.isValid(username)) {
             // Ванильную проверку имени мы отменили — валидируем сами, до любых запросов к Mojang
@@ -94,7 +111,7 @@ public abstract class ServerLoginMixin {
                     "LOGIN_BLOCKED",
                     username,
                     null,
-                    com.hybridauth.auth.AuthManager.ipFromSocketAddress(connection.getRemoteAddress()),
+                    AuthManager.ipFromSocketAddress(connection.getRemoteAddress()),
                     "reason=invalid_username");
             disconnect(Component.literal(colorize(ModConfig.SERVER.msgInvalidUsername.get())));
             return;
@@ -107,61 +124,19 @@ public abstract class ServerLoginMixin {
         // Устанавливаем KEY-состояние пока ждём ответа от Mojang API
         state = ServerLoginPacketListenerImpl.State.KEY;
 
-        // An exact-case cracked registration intentionally takes precedence over
-        // Mojang's case-insensitive profile lookup. This is the configured policy
-        // that allows ReMure (premium) and remure (cracked) to coexist safely.
+        // Кракнутая запись с точным регистром. Решение о её использовании принимается
+        // только после проверки Mojang (см. onPremiumLookup).
         PlayerData exactCracked = HybridAuthMod.getAuthManager().getStorage()
                 .loadByExactUsername(username)
                 .filter(PlayerData::isCracked)
                 .orElse(null);
-        if (exactCracked != null) {
-            startClientVerification(new GameProfile(exactCracked.getUuid(), username));
-            return;
-        }
 
         HybridAuthMod.getMojangClient().checkPremium(username).thenAccept(result -> {
             MinecraftServer server = HybridAuthMod.getServer();
             if (server == null) {
                 return; // Сервер уже остановился
             }
-            server.execute(() -> {
-                if (result.status() == com.hybridauth.auth.PremiumLookupResult.Status.API_UNAVAILABLE) {
-                    if (ModConfig.SERVER.onMojangApiFailure.get() == ModConfig.ApiFailureAction.KICK) {
-                        disconnect(Component.literal(colorize(ModConfig.SERVER.msgMojangApiError.get())));
-                        return;
-                    }
-
-                    hybridAuth_allowKnownCrackedOnApiFailure(username,
-                            com.hybridauth.auth.AuthManager.ipFromSocketAddress(connection.getRemoteAddress()),
-                            "API_FAILURE_ALLOW_CRACKED");
-                    return;
-                }
-
-                if (result.status() == com.hybridauth.auth.PremiumLookupResult.Status.PREMIUM) {
-                    // Ник зарегистрирован в Mojang — запрашиваем шифрование для проверки сессии
-                    byte[] verifyToken = this.challenge;
-                    if (verifyToken == null || verifyToken.length == 0) {
-                        verifyToken = new byte[4];
-                        new java.security.SecureRandom().nextBytes(verifyToken);
-                        this.challenge = verifyToken;
-                    }
-                    this.hybridAuth_challenge = verifyToken;
-
-                    connection.send(new ClientboundHelloPacket(
-                            "",
-                            server.getKeyPair().getPublic().getEncoded(),
-                            verifyToken,
-                            true
-                    ));
-                    // Остаёмся в KEY — клиент пришлёт ServerboundKeyPacket → onHandleKey
-                } else {
-                    // Не премиум ник — пускаем как оффлайн-игрока
-                    startClientVerification(new GameProfile(
-                            OfflineUuid.forName(username),
-                            username
-                    ));
-                }
-            });
+            server.execute(() -> onPremiumLookup(server, username, exactCracked, result));
         }).exceptionally(e -> {
             MinecraftServer server = HybridAuthMod.getServer();
             if (server == null) {
@@ -169,24 +144,72 @@ public abstract class ServerLoginMixin {
             }
             server.execute(() -> {
                 HybridAuthMod.getLogger().error("[HybridAuth] Ошибка проверки Mojang API для {}", username, e);
-
-                if (ModConfig.SERVER.onMojangApiFailure.get() == ModConfig.ApiFailureAction.KICK) {
-                    disconnect(Component.literal(colorize(ModConfig.SERVER.msgMojangApiError.get())));
-                } else {
-                    // ALLOW_CRACKED: при ошибке API — пускаем как оффлайн (с предупреждением в audit log)
-                    hybridAuth_allowKnownCrackedOnApiFailure(username,
-                            com.hybridauth.auth.AuthManager.ipFromSocketAddress(connection.getRemoteAddress()),
-                            "API_EXCEPTION_ALLOW_CRACKED");
-                }
+                onPremiumLookup(server, username, exactCracked, PremiumLookupResult.apiUnavailable());
             });
             return null;
         });
     }
 
+    /** Выполняется на серверном потоке, когда известен результат проверки Mojang. */
+    @Unique
+    private void onPremiumLookup(MinecraftServer server, String username,
+                                 PlayerData exactCracked, PremiumLookupResult result) {
+        if (exactCracked != null) {
+            // Кракнутая запись с точным ником входит по паролю, как и раньше. Если ник при этом
+            // лицензионный, владелец лицензии войти не сможет: AuthEventHandler и AuthManager покажут
+            // ему сообщение о техподдержке. Кракнутый владелец продолжает играть до переноса.
+            HybridAuthMod.getAuthManager().setLicensedNameConflict(
+                    exactCracked.getUuid(),
+                    LicensedNameRules.isLicensedExactConflict(username, result.status(), result.canonicalName()));
+            startClientVerification(new GameProfile(exactCracked.getUuid(), username));
+            return;
+        }
+
+        if (result.status() == PremiumLookupResult.Status.API_UNAVAILABLE) {
+            if (ModConfig.SERVER.onMojangApiFailure.get() == ModConfig.ApiFailureAction.KICK) {
+                disconnect(Component.literal(colorize(ModConfig.SERVER.msgMojangApiError.get())));
+                return;
+            }
+
+            hybridAuth_allowKnownCrackedOnApiFailure(username,
+                    AuthManager.ipFromSocketAddress(connection.getRemoteAddress()),
+                    "API_FAILURE_ALLOW_CRACKED");
+            return;
+        }
+
+        if (result.status() == PremiumLookupResult.Status.PREMIUM) {
+            // Ник зарегистрирован в Mojang — запрашиваем шифрование для проверки сессии
+            sendEncryptionRequest(server);
+            // Остаёмся в KEY — клиент пришлёт ServerboundKeyPacket → onHandleKey
+            return;
+        }
+
+        // Не премиум ник — пускаем как оффлайн-игрока
+        startClientVerification(new GameProfile(OfflineUuid.forName(username), username));
+    }
+
+    @Unique
+    private void sendEncryptionRequest(MinecraftServer server) {
+        byte[] verifyToken = this.challenge;
+        if (verifyToken == null || verifyToken.length == 0) {
+            verifyToken = new byte[4];
+            new java.security.SecureRandom().nextBytes(verifyToken);
+            this.challenge = verifyToken;
+        }
+        this.hybridAuth_challenge = verifyToken;
+
+        connection.send(new ClientboundHelloPacket(
+                "",
+                server.getKeyPair().getPublic().getEncoded(),
+                verifyToken,
+                true
+        ));
+    }
+
     /**
-     * During an API outage, only accounts already known as cracked may use the
-     * availability fallback. Unknown names must fail closed because the server
-     * cannot determine whether they belong to a premium account.
+     * Во время сбоя Mojang API пускаем только известные кракнутые аккаунты.
+     * Неизвестные ники должны падать в закрытом состоянии: сервер не может понять,
+     * принадлежит ли ник лицензионному аккаунту.
      */
     @Unique
     private void hybridAuth_allowKnownCrackedOnApiFailure(String username, String ipAddress, String auditEvent) {
@@ -219,7 +242,7 @@ public abstract class ServerLoginMixin {
      * т.е. только для игроков с премиум-ником.
      *
      * Проверяем сессию у Mojang (hasJoined).
-     * Если сессия валидна — лицушник, пускаем с реальным профилем.
+     * Если сессия валидна — лицензионный игрок, пускаем с реальным профилем.
      * Если невалидна — пытается войти под чужим ником, кик.
      */
     @Inject(method = "handleKey", at = @At("HEAD"), cancellable = true)
@@ -228,10 +251,17 @@ public abstract class ServerLoginMixin {
             return;
         }
 
+        // Ванильный handleKey не должен выполняться поверх нашего потока
+        ci.cancel();
+
+        if (state != ServerLoginPacketListenerImpl.State.KEY) {
+            protocolError();
+            return;
+        }
+
         MinecraftServer server = HybridAuthMod.getServer();
         if (server == null) {
             disconnect(Component.literal(colorize(ModConfig.SERVER.msgAuthServerError.get())));
-            ci.cancel();
             return;
         }
 
@@ -262,26 +292,7 @@ public abstract class ServerLoginMixin {
                 if (callbackServer == null) {
                     return; // Сервер уже остановился
                 }
-                callbackServer.execute(() -> {
-                    if (profileOpt.isPresent()) {
-                        // Лицензионный игрок — сохраняем как PREMIUM и пускаем
-                        GameProfile profile = profileOpt.get();
-                        HybridAuthMod.getLogger().info("[HybridAuth] Лицензионный игрок {} прошёл проверку.", username);
-
-                        PlayerData data = HybridAuthMod.getAuthManager().getStorage()
-                                .load(profile.getId())
-                                .orElse(new PlayerData(profile.getId(), profile.getName(), PlayerData.PlayerType.PREMIUM));
-                        data.setType(PlayerData.PlayerType.PREMIUM);
-                        data.setUsername(profile.getName());
-                        HybridAuthMod.getAuthManager().getStorage().save(data);
-
-                        startClientVerification(profile);
-                    } else {
-                        // hasJoined провалился — кто-то пытается зайти под премиум-ником без лицензии
-                        HybridAuthMod.getLogger().warn("[HybridAuth] Игрок {} попытался войти под премиум-ником без лицензии — кик.", username);
-                        disconnect(Component.literal(colorize(ModConfig.SERVER.msgPremiumKick.get())));
-                    }
-                });
+                callbackServer.execute(() -> onSessionVerified(username, profileOpt));
             }).exceptionally(e -> {
                 MinecraftServer callbackServer = HybridAuthMod.getServer();
                 if (callbackServer == null) {
@@ -294,17 +305,95 @@ public abstract class ServerLoginMixin {
                 return null;
             });
 
-            ci.cancel(); // Отменяем ванильную обработку handleKey
-
         } catch (Exception e) {
             HybridAuthMod.getLogger().error("[HybridAuth] Ошибка при обработке ключа шифрования", e);
             disconnect(Component.literal(colorize(ModConfig.SERVER.msgInvalidEncryptionKey.get())));
-            ci.cancel();
         }
+    }
+
+    /** Выполняется на серверном потоке после ответа hasJoined. */
+    @Unique
+    private void onSessionVerified(String username, Optional<GameProfile> profileOpt) {
+        AuthManager authManager = HybridAuthMod.getAuthManager();
+
+        if (profileOpt.isEmpty()) {
+            // hasJoined провалился — кто-то пытается зайти под премиум-ником без лицензии
+            HybridAuthMod.getLogger().warn("[HybridAuth] Игрок {} попытался войти под премиум-ником без лицензии — кик.", username);
+            disconnect(Component.literal(colorize(ModConfig.SERVER.msgPremiumKick.get())));
+            return;
+        }
+
+        GameProfile profile = profileOpt.get();
+
+        // Лицензионный игрок — сохраняем как PREMIUM и пускаем
+        // (ник с кракнутой записью сюда не попадает: см. onPremiumLookup)
+        HybridAuthMod.getLogger().info("[HybridAuth] Лицензионный игрок {} прошёл проверку.", username);
+
+        PlayerData data = authManager.getStorage()
+                .load(profile.getId())
+                .orElse(new PlayerData(profile.getId(), profile.getName(), PlayerData.PlayerType.PREMIUM));
+        data.setType(PlayerData.PlayerType.PREMIUM);
+        data.setUsername(profile.getName());
+        authManager.getStorage().save(data);
+
+        hybridAuth_verifiedPremium = true;
+        startClientVerification(profile);
+    }
+
+    /**
+     * Вызывается ванилой перед завершением логина. Здесь ещё не известно, кто пришёл,
+     * но UUID уже совпадает с онлайн-игроком. Ванильный кик старой сессии происходит
+     * раньше, чем HybridAuth получает управление, поэтому решаем здесь.
+     */
+    @Inject(method = "verifyLoginAndFinishConnectionSetup", at = @At("HEAD"), cancellable = true)
+    private void onVerifyLoginAndFinishConnectionSetup(GameProfile profile, CallbackInfo ci) {
+        if (hybridAuth_duplicateRejected) {
+            ci.cancel();
+            return;
+        }
+        if (!ModConfig.SERVER.enabled.get()) {
+            return;
+        }
+
+        MinecraftServer server = HybridAuthMod.getServer();
+        AuthManager authManager = HybridAuthMod.getAuthManager();
+        if (server == null || authManager == null) {
+            return;
+        }
+
+        ServerPlayer existing = server.getPlayerList().getPlayer(profile.getId());
+        if (existing == null) {
+            return;
+        }
+
+        String newIp = AuthManager.ipFromSocketAddress(connection.getRemoteAddress());
+        String existingIp = AuthManager.ipFromSocketAddress(existing.connection.getRemoteAddress());
+        boolean existingAuthenticated = authManager.isAuthenticated(existing.getUUID());
+
+        if (DuplicateLoginRules.decide(hybridAuth_verifiedPremium, existingAuthenticated, existingIp, newIp)
+                != DuplicateLoginRules.Decision.REJECT_NEWCOMER) {
+            return; // Ванильное поведение: старая сессия будет кикнута
+        }
+
+        hybridAuth_duplicateRejected = true;
+        authManager.audit(
+                "DUPLICATE_LOGIN_REJECTED",
+                profile.getName(),
+                profile.getId(),
+                newIp,
+                "existing_ip=" + existingIp);
+        disconnect(Component.literal(colorize(ModConfig.SERVER.msgDuplicateLogin.get())));
+        ci.cancel();
+    }
+
+    /** Нарушение порядка пакетов: вместо ванильного исключения отключаем игрока. */
+    @Unique
+    private void protocolError() {
+        disconnect(Component.literal(colorize(ModConfig.SERVER.msgAuthServerError.get())));
     }
 
     @Unique
     private static String colorize(String message) {
-        return message.replace("&", "\u00A7");
+        return message.replace("&", "§");
     }
 }

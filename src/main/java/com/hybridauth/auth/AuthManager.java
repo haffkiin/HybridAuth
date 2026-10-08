@@ -14,12 +14,16 @@ import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.time.Instant;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 
 public class AuthManager {
 
@@ -31,6 +35,19 @@ public class AuthManager {
     private final Map<UUID, Boolean> authenticatedPlayers = new ConcurrentHashMap<>();
     private final Map<UUID, ScheduledFuture<?>> timeoutTasks = new ConcurrentHashMap<>();
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
+    /** PBKDF2 (310k итераций) работает здесь, а не на потоке сервера. */
+    private final ExecutorService passwordExecutor = Executors.newFixedThreadPool(2, runnable -> {
+        Thread thread = new Thread(runnable, "hybridauth-password");
+        thread.setDaemon(true);
+        return thread;
+    });
+    /** Игроки, у которых сейчас идёт проверка/хеширование пароля: одна операция за раз. */
+    private final Set<UUID> passwordOperations = ConcurrentHashMap.newKeySet();
+    /**
+     * Кракнутые записи, ник которых занят лицензионным аккаунтом в Mojang.
+     * Их владельцы входят по паролю, а владелец лицензии получает сообщение о техподдержке.
+     */
+    private final Set<UUID> licensedNameConflicts = ConcurrentHashMap.newKeySet();
     private final LoginRateLimiter loginRateLimiter = new LoginRateLimiter(300, 300);
 
     public AuthManager(PlayerStorage storage, SessionManager sessionManager, AuthAuditLogger auditLogger) {
@@ -105,6 +122,7 @@ public class AuthManager {
     public void handlePlayerQuit(ServerPlayer player) {
         boolean wasAuthenticated = authenticatedPlayers.getOrDefault(player.getUUID(), false);
         authenticatedPlayers.remove(player.getUUID());
+        licensedNameConflicts.remove(player.getUUID());
         cancelTimeoutTask(player.getUUID());
         audit(player, "DISCONNECT", "authenticated=" + wasAuthenticated);
     }
@@ -121,7 +139,10 @@ public class AuthManager {
                 player.server.execute(() -> {
                     if (!isAuthenticated(player.getUUID())) {
                         audit(player, "AUTH_TIMEOUT", "timeout_seconds=" + timeoutSeconds);
-                        player.connection.disconnect(Component.literal(colorize(ModConfig.SERVER.msgAuthTimeout.get())));
+                        String kickMessage = isLicensedNameConflict(player.getUUID())
+                                ? ModConfig.SERVER.msgLicensedNameOccupied.get()
+                                : ModConfig.SERVER.msgAuthTimeout.get();
+                        player.connection.disconnect(Component.literal(colorize(kickMessage)));
                     }
                 });
             }
@@ -162,7 +183,10 @@ public class AuthManager {
         data.setLastLoginIp(ip);
         storage.save(data);
 
-        sessionManager.createSession(username, uuid, ip);
+        // Вход по сессии не продлевает её: срок отсчитывается от входа по паролю/лицензии.
+        if (!"SESSION".equals(method)) {
+            sessionManager.createSession(username, uuid, ip);
+        }
         auditLogger.log(
                 "LOGIN_SUCCESS",
                 username,
@@ -247,7 +271,8 @@ public class AuthManager {
                 player.getUUID(),
                 player.getScoreboardName(),
                 getRemoteIp(player),
-                ModConfig.SERVER.maxLoginAttempts.get());
+                ModConfig.SERVER.maxLoginAttempts.get(),
+                isLastSuccessfulAddress(player));
     }
 
     public LoginRateLimiter.Result recordFailedAttempt(ServerPlayer player) {
@@ -255,15 +280,56 @@ public class AuthManager {
                 player.getUUID(),
                 player.getScoreboardName(),
                 getRemoteIp(player),
-                ModConfig.SERVER.maxLoginAttempts.get());
+                ModConfig.SERVER.maxLoginAttempts.get(),
+                isLastSuccessfulAddress(player));
     }
 
     public void clearFailedAttempts(ServerPlayer player) {
         loginRateLimiter.clear(player.getUUID(), player.getScoreboardName(), getRemoteIp(player));
     }
 
+    /**
+     * IP, с которого аккаунт успешно входил последним, не блокируется общим локом по нику:
+     * иначе чужой перебор закрывал бы владельцу доступ с его собственного адреса.
+     */
+    private boolean isLastSuccessfulAddress(ServerPlayer player) {
+        PlayerData data = storage.load(player.getUUID())
+                .orElseGet(() -> storage.loadByExactUsername(player.getScoreboardName()).orElse(null));
+        return data != null && getRemoteIp(player).equals(data.getLastLoginIp());
+    }
+
+    /** Ставит операцию с паролем в очередь на пул хеширования. */
+    public <T> CompletableFuture<T> supplyPasswordTask(Supplier<T> task) {
+        return CompletableFuture.supplyAsync(task, passwordExecutor);
+    }
+
+    /**
+     * Вызывается при каждом входе кракнутой записи: true, если её ник занят лицензионным аккаунтом.
+     */
+    public void setLicensedNameConflict(UUID uuid, boolean conflict) {
+        if (conflict) {
+            licensedNameConflicts.add(uuid);
+        } else {
+            licensedNameConflicts.remove(uuid);
+        }
+    }
+
+    public boolean isLicensedNameConflict(UUID uuid) {
+        return licensedNameConflicts.contains(uuid);
+    }
+
+    /** @return false, если для этого игрока уже выполняется операция с паролем */
+    public boolean beginPasswordOperation(UUID uuid) {
+        return passwordOperations.add(uuid);
+    }
+
+    public void endPasswordOperation(UUID uuid) {
+        passwordOperations.remove(uuid);
+    }
+
     public void shutdown() {
         scheduler.shutdown();
+        passwordExecutor.shutdownNow();
         sessionManager.clear();
         storage.close();
         auditLogger.close();

@@ -19,11 +19,31 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Comparator;
 import java.util.List;
+import java.util.UUID;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 public class AuthCommands {
 
     private static final int ADMIN_LIST_LIMIT = 30;
     private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+
+    // Результаты фоновых проверок пароля (см. runPasswordCheck)
+    private record Registration(String recoveryCode, String passwordHash, String recoveryCodeHash) {
+    }
+
+    private record LoginCheck(boolean matches, String rehash) {
+    }
+
+    private record PasswordChange(boolean verified, String newHash) {
+    }
+
+    private record IssuedCode(String code, String hash) {
+    }
+
+    private record RecoveryReset(boolean verified, String passwordHash, String recoveryCode, String recoveryCodeHash) {
+    }
 
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
         registerRegisterCommand(dispatcher, "register");
@@ -69,6 +89,7 @@ public class AuthCommands {
                                 .executes(context -> handleAdminUnregister(
                                         context.getSource(),
                                         StringArgumentType.getString(context, "username")))))
+                .then(AccountTransferCommands.build())
                 .then(Commands.literal("list").executes(context -> handleAdminList(context.getSource())))
                 .then(Commands.literal("status").executes(context -> handleAdminStatus(context.getSource()))));
     }
@@ -139,16 +160,35 @@ public class AuthCommands {
             return 0;
         }
 
-        String recoveryCode = RecoveryCodeGenerator.generate();
+        return runPasswordCheck(player, () -> {
+            String recoveryCode = RecoveryCodeGenerator.generate();
+            return new Registration(
+                    recoveryCode,
+                    PasswordHasher.hash(password),
+                    PasswordHasher.hash(RecoveryCodeGenerator.normalize(recoveryCode)));
+        }, registration -> finishRegister(player, registration));
+    }
+
+    private static void finishRegister(ServerPlayer player, Registration registration) {
+        AuthManager authManager = HybridAuthMod.getAuthManager();
+
+        if (authManager.isAuthenticated(player.getUUID())) {
+            player.sendSystemMessage(Component.literal(colorize(ModConfig.SERVER.msgAlreadyLoggedIn.get())));
+            return;
+        }
+        if (findPlayerData(authManager, player) != null) {
+            player.sendSystemMessage(Component.literal(colorize(ModConfig.SERVER.msgAlreadyRegistered.get())));
+            return;
+        }
+
         PlayerData data = new PlayerData(player.getUUID(), player.getScoreboardName(), PlayerData.PlayerType.CRACKED);
-        data.setPasswordHash(PasswordHasher.hash(password));
-        data.setRecoveryCodeHash(PasswordHasher.hash(RecoveryCodeGenerator.normalize(recoveryCode)));
+        data.setPasswordHash(registration.passwordHash());
+        data.setRecoveryCodeHash(registration.recoveryCodeHash());
         authManager.getStorage().save(data);
 
         player.sendSystemMessage(Component.literal(colorize(ModConfig.SERVER.msgRegisterSuccess.get())));
         authManager.authenticate(player, true, "REGISTER");
-        sendRecoveryCode(player, recoveryCode);
-        return 1;
+        sendRecoveryCode(player, registration.recoveryCode());
     }
 
     private static int handleLogin(ServerPlayer player, String password) {
@@ -186,17 +226,35 @@ public class AuthCommands {
             return recordFailedAttempt(player, "LOGIN_FAILURE", "reason=password_too_long");
         }
 
-        if (PasswordHasher.verify(password, data.getPasswordHash())) {
+        String storedHash = data.getPasswordHash();
+        return runPasswordCheck(player, () -> {
+            boolean matches = PasswordHasher.verify(password, storedHash);
             // Прозрачное перехеширование старых записей (PBKDF2 с меньшим числом итераций)
-            if (PasswordHasher.needsRehash(data.getPasswordHash())) {
-                data.setPasswordHash(PasswordHasher.hash(password));
-            }
-            authManager.clearFailedAttempts(player);
-            authManager.authenticate(player, false, "PASSWORD");
-            return 1;
+            String rehash = matches && PasswordHasher.needsRehash(storedHash) ? PasswordHasher.hash(password) : null;
+            return new LoginCheck(matches, rehash);
+        }, check -> finishLogin(player, data, check));
+    }
+
+    private static void finishLogin(ServerPlayer player, PlayerData data, LoginCheck check) {
+        AuthManager authManager = HybridAuthMod.getAuthManager();
+
+        if (authManager.isAuthenticated(player.getUUID())) {
+            return;
+        }
+        if (!check.matches()) {
+            recordFailedAttempt(player, "LOGIN_FAILURE", "reason=wrong_password");
+            return;
+        }
+        if (!isStillStored(authManager, data)) {
+            sendInternalError(player);
+            return;
         }
 
-        return recordFailedAttempt(player, "LOGIN_FAILURE", "reason=wrong_password");
+        if (check.rehash() != null) {
+            data.setPasswordHash(check.rehash());
+        }
+        authManager.clearFailedAttempts(player);
+        authManager.authenticate(player, false, "PASSWORD");
     }
 
     private static int handleChangePassword(ServerPlayer player, String oldPassword, String newPassword, String confirm) {
@@ -218,20 +276,37 @@ public class AuthCommands {
             return 0;
         }
 
-        if (oldPassword.length() <= ModConfig.SERVER.maxPasswordLength.get()
-                && PasswordHasher.verify(oldPassword, data.getPasswordHash())) {
-            if (!validateNewPassword(player, newPassword, confirm)) {
-                return 0;
-            }
-            data.setPasswordHash(PasswordHasher.hash(newPassword));
-            authManager.getStorage().save(data);
-            authManager.getSessionManager().endSession(data.getUsername(), data.getUuid());
-            authManager.audit(player, "PASSWORD_CHANGED", null);
-            player.sendSystemMessage(Component.literal(colorize(ModConfig.SERVER.msgPasswordChanged.get())));
-            return 1;
+        if (oldPassword.length() > ModConfig.SERVER.maxPasswordLength.get()) {
+            return recordFailedAttempt(player, "PASSWORD_CHANGE_FAILURE", "reason=wrong_old_password");
+        }
+        if (!validateNewPassword(player, newPassword, confirm)) {
+            return 0;
         }
 
-        return recordFailedAttempt(player, "PASSWORD_CHANGE_FAILURE", "reason=wrong_old_password");
+        String storedHash = data.getPasswordHash();
+        return runPasswordCheck(player, () -> {
+            boolean verified = PasswordHasher.verify(oldPassword, storedHash);
+            return new PasswordChange(verified, verified ? PasswordHasher.hash(newPassword) : null);
+        }, change -> finishChangePassword(player, data, change));
+    }
+
+    private static void finishChangePassword(ServerPlayer player, PlayerData data, PasswordChange change) {
+        AuthManager authManager = HybridAuthMod.getAuthManager();
+
+        if (!change.verified()) {
+            recordFailedAttempt(player, "PASSWORD_CHANGE_FAILURE", "reason=wrong_old_password");
+            return;
+        }
+        if (!isStillStored(authManager, data)) {
+            sendInternalError(player);
+            return;
+        }
+
+        data.setPasswordHash(change.newHash());
+        authManager.getStorage().save(data);
+        authManager.getSessionManager().endSession(data.getUsername(), data.getUuid());
+        authManager.audit(player, "PASSWORD_CHANGED", null);
+        player.sendSystemMessage(Component.literal(colorize(ModConfig.SERVER.msgPasswordChanged.get())));
     }
 
     private static int handleNewRecoveryCode(ServerPlayer player) {
@@ -247,12 +322,23 @@ public class AuthCommands {
             return 0;
         }
 
-        String recoveryCode = RecoveryCodeGenerator.generate();
-        data.setRecoveryCodeHash(PasswordHasher.hash(RecoveryCodeGenerator.normalize(recoveryCode)));
+        return runPasswordCheck(player, () -> {
+            String code = RecoveryCodeGenerator.generate();
+            return new IssuedCode(code, PasswordHasher.hash(RecoveryCodeGenerator.normalize(code)));
+        }, issued -> finishNewRecoveryCode(player, data, issued));
+    }
+
+    private static void finishNewRecoveryCode(ServerPlayer player, PlayerData data, IssuedCode issued) {
+        AuthManager authManager = HybridAuthMod.getAuthManager();
+        if (!isStillStored(authManager, data)) {
+            sendInternalError(player);
+            return;
+        }
+
+        data.setRecoveryCodeHash(issued.hash());
         authManager.getStorage().save(data);
         authManager.audit(player, "RECOVERY_CODE_ISSUED", "issuer=player");
-        sendRecoveryCode(player, recoveryCode);
-        return 1;
+        sendRecoveryCode(player, issued.code());
     }
 
     private static int handleRecover(ServerPlayer player, String code, String password, String confirm) {
@@ -266,46 +352,75 @@ public class AuthCommands {
             return 0;
         }
 
+        String normalizedCode = RecoveryCodeGenerator.normalize(code);
+        if (normalizedCode.length() > 64) {
+            return recordFailedAttempt(player, "RECOVERY_FAILURE", "reason=code_too_long");
+        }
+
         PlayerData data = findPlayerData(authManager, player);
-        if (data == null || data.isPremium() || data.getRecoveryCodeHash() == null) {
+        if (data == null || data.isPremium()) {
+            // Тот же ответ и тот же учёт попыток, что и при неверном коде:
+            // по ответу нельзя понять, зарегистрирован ли ник
+            player.sendSystemMessage(Component.literal(colorize(ModConfig.SERVER.msgInvalidRecoveryCode.get())));
+            return recordFailedAttempt(player, "RECOVERY_FAILURE", "reason=unknown_account");
+        }
+
+        if (data.getRecoveryCodeHash() == null) {
             player.sendSystemMessage(Component.literal(colorize(ModConfig.SERVER.msgRecoveryNotConfigured.get()
                     .replace("%username%", player.getScoreboardName()))));
             authManager.audit(player, "RECOVERY_FAILURE", "reason=not_configured");
             return 0;
         }
 
-        String normalizedCode = RecoveryCodeGenerator.normalize(code);
-        if (normalizedCode.length() > 64) {
-            return recordFailedAttempt(player, "RECOVERY_FAILURE", "reason=code_too_long");
-        }
-        if (!PasswordHasher.verify(normalizedCode, data.getRecoveryCodeHash())) {
-            player.sendSystemMessage(Component.literal(colorize(ModConfig.SERVER.msgInvalidRecoveryCode.get())));
-            return recordFailedAttempt(player, "RECOVERY_FAILURE", "reason=invalid_code");
-        }
-
         if (!validateNewPassword(player, password, confirm)) {
             return 0;
         }
 
-        String nextRecoveryCode = RecoveryCodeGenerator.generate();
-        data.setPasswordHash(PasswordHasher.hash(password));
-        data.setRecoveryCodeHash(PasswordHasher.hash(RecoveryCodeGenerator.normalize(nextRecoveryCode)));
+        String recoveryHash = data.getRecoveryCodeHash();
+        return runPasswordCheck(player, () -> {
+            if (!PasswordHasher.verify(normalizedCode, recoveryHash)) {
+                return new RecoveryReset(false, null, null, null);
+            }
+            String nextRecoveryCode = RecoveryCodeGenerator.generate();
+            return new RecoveryReset(
+                    true,
+                    PasswordHasher.hash(password),
+                    nextRecoveryCode,
+                    PasswordHasher.hash(RecoveryCodeGenerator.normalize(nextRecoveryCode)));
+        }, reset -> finishRecover(player, data, reset));
+    }
+
+    private static void finishRecover(ServerPlayer player, PlayerData data, RecoveryReset reset) {
+        AuthManager authManager = HybridAuthMod.getAuthManager();
+        if (authManager.isAuthenticated(player.getUUID())) {
+            return;
+        }
+        if (!reset.verified()) {
+            player.sendSystemMessage(Component.literal(colorize(ModConfig.SERVER.msgInvalidRecoveryCode.get())));
+            recordFailedAttempt(player, "RECOVERY_FAILURE", "reason=invalid_code");
+            return;
+        }
+        if (!isStillStored(authManager, data)) {
+            sendInternalError(player);
+            return;
+        }
+
+        data.setPasswordHash(reset.passwordHash());
+        data.setRecoveryCodeHash(reset.recoveryCodeHash());
         authManager.getSessionManager().endSession(data.getUsername(), data.getUuid());
         authManager.getStorage().save(data);
         authManager.clearFailedAttempts(player);
 
         authManager.authenticate(player, false, "RECOVERY");
         player.sendSystemMessage(Component.literal(colorize(ModConfig.SERVER.msgRecoverySuccess.get())));
-        sendRecoveryCode(player, nextRecoveryCode);
-        return 1;
+        sendRecoveryCode(player, reset.recoveryCode());
     }
 
     private static int handleAdminRecoveryCode(CommandSourceStack source, String username) {
         AuthManager authManager = HybridAuthMod.getAuthManager();
         PlayerData data = authManager.getStorage().loadByExactUsername(username).orElse(null);
         if (data == null) {
-            source.sendFailure(Component.literal(colorize(ModConfig.SERVER.msgAdminAccountNotFound.get()
-                    .replace("%username%", username))));
+            sendAccountNotFound(source, authManager, username);
             return 0;
         }
         if (data.isPremium()) {
@@ -333,11 +448,9 @@ public class AuthCommands {
 
     private static int handleAdminInfo(CommandSourceStack source, String username) {
         AuthManager authManager = HybridAuthMod.getAuthManager();
-        PlayerData data = authManager.getStorage().loadByUsername(username)
-                .orElseGet(() -> authManager.getStorage().loadByExactUsername(username).orElse(null));
+        PlayerData data = authManager.getStorage().loadByExactUsername(username).orElse(null);
         if (data == null) {
-            source.sendFailure(Component.literal(colorize(ModConfig.SERVER.msgAdminAccountNotFound.get()
-                    .replace("%username%", username))));
+            sendAccountNotFound(source, authManager, username);
             return 0;
         }
 
@@ -354,16 +467,21 @@ public class AuthCommands {
 
     private static int handleAdminUnregister(CommandSourceStack source, String username) {
         AuthManager authManager = HybridAuthMod.getAuthManager();
-        PlayerData data = authManager.getStorage().loadByExactUsername(username)
-                .orElseGet(() -> authManager.getStorage().loadByUsername(username).orElse(null));
+        // Только точное совпадение: при ReMure и remure команда не должна удалить не тот аккаунт
+        PlayerData data = authManager.getStorage().loadByExactUsername(username).orElse(null);
         if (data == null) {
-            source.sendFailure(Component.literal(colorize(ModConfig.SERVER.msgAdminAccountNotFound.get()
-                    .replace("%username%", username))));
+            sendAccountNotFound(source, authManager, username);
             return 0;
         }
 
-        // Удаление необратимо для игрока (пароль пропадает) — перед удалением создаём бэкап
-        boolean backupCreated = authManager.getStorage().createBackup();
+        // Удаление необратимо для игрока (пароль пропадает): без бэкапа аккаунт не удаляем
+        if (!authManager.getStorage().createBackup()) {
+            source.sendFailure(Component.literal(colorize(ModConfig.SERVER.msgAdminBackupFailed.get())));
+            source.sendFailure(Component.literal(colorize(
+                    "&cУдаление аккаунта " + data.getUsername() + " отменено: без бэкапа аккаунт не удаляется.")));
+            return 0;
+        }
+
         boolean deleted = authManager.getStorage().delete(data.getUuid());
         if (!deleted) {
             source.sendFailure(Component.literal(colorize("&cНе удалось удалить аккаунт " + data.getUsername() + ".")));
@@ -376,7 +494,7 @@ public class AuthCommands {
                 data.getUsername(),
                 data.getUuid(),
                 "-",
-                "deleted_by=" + source.getTextName() + ";backup=" + backupCreated);
+                "deleted_by=" + source.getTextName() + ";backup=true");
 
         ServerPlayer online = source.getServer().getPlayerList().getPlayerByName(data.getUsername());
         if (online != null) {
@@ -384,7 +502,7 @@ public class AuthCommands {
         }
 
         source.sendSuccess(() -> Component.literal(colorize(
-                "&aАккаунт &f" + data.getUsername() + "&a удалён." + (backupCreated ? " Бэкап создан." : ""))), true);
+                "&aАккаунт &f" + data.getUsername() + "&a удалён. Бэкап создан.")), true);
         return 1;
     }
 
@@ -422,19 +540,39 @@ public class AuthCommands {
         return 1;
     }
 
-    private static String typeLabel(PlayerData data) {
-        return data.isPremium() ? "лицензионный" : "парольный";
-    }
+    /**
+     * Выполняет тяжёлую работу с паролем (PBKDF2) на пуле хеширования, а результат
+     * возвращает на серверный поток. Команда сразу возвращает управление, поэтому
+     * результат нельзя узнать из её возвращаемого значения.
+     */
+    private static <T> int runPasswordCheck(ServerPlayer player, Supplier<T> work, Consumer<T> onDone) {
+        AuthManager authManager = HybridAuthMod.getAuthManager();
+        UUID uuid = player.getUUID();
 
-    private static String formatDate(Instant instant) {
-        if (instant == null) {
-            return "-";
+        if (!authManager.beginPasswordOperation(uuid)) {
+            player.sendSystemMessage(Component.literal(colorize(ModConfig.SERVER.msgPasswordCheckPending.get())));
+            return 0;
         }
+
         try {
-            return DATE_FORMAT.withZone(ZoneId.systemDefault()).format(instant);
-        } catch (DateTimeException e) {
-            return instant.toString();
+            authManager.supplyPasswordTask(work).whenComplete((result, failure) -> player.server.execute(() -> {
+                authManager.endPasswordOperation(uuid);
+                if (failure != null) {
+                    HybridAuthMod.getLogger().error("[HybridAuth] Ошибка операции с паролем для {}",
+                            player.getScoreboardName(), failure);
+                    sendInternalError(player);
+                    return;
+                }
+                if (player.connection.isAcceptingMessages()) {
+                    onDone.accept(result);
+                }
+            }));
+        } catch (RejectedExecutionException exception) {
+            authManager.endPasswordOperation(uuid);
+            sendInternalError(player);
+            return 0;
         }
+        return 1;
     }
 
     private static boolean validateNewPassword(ServerPlayer player, String password, String confirm) {
@@ -491,12 +629,47 @@ public class AuthCommands {
         player.sendSystemMessage(Component.literal(colorize(ModConfig.SERVER.msgRecoveryCodeWarning.get())));
     }
 
+    private static void sendInternalError(ServerPlayer player) {
+        player.sendSystemMessage(Component.literal(colorize(ModConfig.SERVER.msgAuthServerError.get())));
+    }
+
+    /** Запись могла быть удалена администратором, пока шло хеширование. */
+    private static boolean isStillStored(AuthManager authManager, PlayerData data) {
+        return authManager.getStorage().load(data.getUuid())
+                .filter(current -> current == data)
+                .isPresent();
+    }
+
+    private static void sendAccountNotFound(CommandSourceStack source, AuthManager authManager, String username) {
+        source.sendFailure(Component.literal(colorize(ModConfig.SERVER.msgAdminAccountNotFound.get()
+                .replace("%username%", username))));
+        authManager.getStorage().loadByUsername(username)
+                .map(PlayerData::getUsername)
+                .ifPresent(similar -> source.sendFailure(Component.literal(colorize(
+                        "&7Есть аккаунт с другим регистром: &f" + similar + "&7. Ник в командах нужно указывать точно."))));
+    }
+
+    private static String typeLabel(PlayerData data) {
+        return data.isPremium() ? "лицензионный" : "парольный";
+    }
+
+    private static String formatDate(Instant instant) {
+        if (instant == null) {
+            return "-";
+        }
+        try {
+            return DATE_FORMAT.withZone(ZoneId.systemDefault()).format(instant);
+        } catch (DateTimeException e) {
+            return instant.toString();
+        }
+    }
+
     private static PlayerData findPlayerData(AuthManager authManager, ServerPlayer player) {
         return authManager.getStorage().load(player.getUUID())
                 .orElseGet(() -> authManager.getStorage().loadByExactUsername(player.getScoreboardName()).orElse(null));
     }
 
     private static String colorize(String message) {
-        return message.replace("&", "\u00A7");
+        return message.replace("&", "§");
     }
 }

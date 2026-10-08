@@ -42,19 +42,36 @@ public final class LoginRateLimiter {
     }
 
     public Result status(UUID uuid, String username, String ipAddress, int maxAttempts) {
+        return status(uuid, username, ipAddress, maxAttempts, false);
+    }
+
+    /**
+     * @param exemptFromNameLock true для IP, с которого ник успешно входил последним:
+     *                           общий лок по нику на него не распространяется
+     *                           (лок по identity остаётся).
+     */
+    public Result status(UUID uuid, String username, String ipAddress, int maxAttempts, boolean exemptFromNameLock) {
         long now = clock.millis();
         AttemptState identityState = attempts.get(key(uuid, username, ipAddress));
-        AttemptState nameState = nameAttempts.get(nameKey(username));
+        AttemptState nameState = exemptFromNameLock ? null : nameAttempts.get(nameKey(username));
         return combine(
                 checkState(identityState, now, maxAttempts),
                 checkState(nameState, now, maxAttempts * NAME_MAX_ATTEMPTS_MULTIPLIER));
     }
 
     public Result recordFailure(UUID uuid, String username, String ipAddress, int maxAttempts) {
+        return recordFailure(uuid, username, ipAddress, maxAttempts, false);
+    }
+
+    /**
+     * Попытки всё равно учитываются в общем счётчике по нику (атаки с других IP продолжают
+     * считаться), но для exempt-адреса результат общего лока не применяется.
+     */
+    public Result recordFailure(UUID uuid, String username, String ipAddress, int maxAttempts, boolean exemptFromNameLock) {
         long now = clock.millis();
         Result identityResult = record(attempts, key(uuid, username, ipAddress), now, maxAttempts);
         Result nameResult = record(nameAttempts, nameKey(username), now, maxAttempts * NAME_MAX_ATTEMPTS_MULTIPLIER);
-        return combine(identityResult, nameResult);
+        return combine(identityResult, exemptFromNameLock ? null : nameResult);
     }
 
     public void clear(UUID uuid, String username, String ipAddress) {

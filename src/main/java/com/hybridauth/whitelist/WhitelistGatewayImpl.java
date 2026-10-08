@@ -10,6 +10,9 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.players.UserWhiteList;
 import net.minecraft.server.players.UserWhiteListEntry;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
@@ -17,6 +20,8 @@ import java.util.Objects;
 import java.util.UUID;
 
 public final class WhitelistGatewayImpl implements WhitelistGateway {
+    private static final Logger LOGGER = LoggerFactory.getLogger("HybridAuth");
+
     private final PlayerStorage storage;
     private final AuthAuditLogger auditLogger;
 
@@ -51,6 +56,10 @@ public final class WhitelistGatewayImpl implements WhitelistGateway {
             }
         }
 
+        String warning = identity.accountType() == com.hybridauth.api.AccountType.CRACKED
+                ? crackedNameWarning(identity.name())
+                : null;
+
         GameProfile profile = new GameProfile(identity.uuid(), identity.name());
         whitelist.add(new UserWhiteListEntry(profile));
         if (!whitelist.isWhiteListed(profile)) {
@@ -61,7 +70,22 @@ public final class WhitelistGatewayImpl implements WhitelistGateway {
         } catch (IOException exception) {
             return new AddOutcome(AddStatus.SAVE_FAILED, identity.name(), identity.uuid());
         }
-        return new AddOutcome(AddStatus.ADDED, identity.name(), identity.uuid());
+        if (warning != null) {
+            LOGGER.warn("[HybridAuth] {}", warning);
+        }
+        return new AddOutcome(AddStatus.ADDED, identity.name(), identity.uuid(), warning);
+    }
+
+    /**
+     * Кракнутый offline-UUID для ника, который уже принадлежит лицензионной записи в базе,
+     * не даст владельцу войти. Добавление не отменяем: решение за модератором.
+     */
+    private String crackedNameWarning(String name) {
+        return storage.loadByExactUsername(name)
+                .filter(PlayerData::isPremium)
+                .map(premium -> "Ник " + name + " уже принадлежит лицензионному аккаунту "
+                        + premium.getUuid() + ". Кракнутая запись с этим ником конфликтует с владельцем лицензии.")
+                .orElse(null);
     }
 
     @Override

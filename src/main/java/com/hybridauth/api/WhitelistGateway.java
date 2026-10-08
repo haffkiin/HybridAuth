@@ -19,7 +19,15 @@ public interface WhitelistGateway {
         SAVE_FAILED
     }
 
-    record AddOutcome(AddStatus status, String name, UUID uuid) {
+    /**
+     * @param warning предупреждение для модератора (например, кракнутый ник совпадает
+     *                с лицензионным аккаунтом) либо null. Добавление при этом выполнено.
+     */
+    record AddOutcome(AddStatus status, String name, UUID uuid, String warning) {
+
+        public AddOutcome(AddStatus status, String name, UUID uuid) {
+            this(status, name, uuid, null);
+        }
     }
 
     enum RemovalStatus {

@@ -6,6 +6,7 @@ import com.hybridauth.api.IdentityResolver;
 import com.hybridauth.api.ResolvedIdentity;
 
 import java.nio.charset.StandardCharsets;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
@@ -32,6 +33,19 @@ public final class HybridIdentityResolver implements IdentityResolver {
             case NOT_PREMIUM -> IdentityResolution.failed(IdentityResolution.Status.NOT_PREMIUM);
             case API_UNAVAILABLE -> IdentityResolution.failed(IdentityResolution.Status.API_UNAVAILABLE);
         });
+    }
+
+    @Override
+    public CompletableFuture<Optional<String>> licensedNickWarning(String submittedName) {
+        String name = normalize(submittedName);
+        if (!MinecraftNames.isValid(name)) {
+            return CompletableFuture.completedFuture(Optional.empty());
+        }
+        return mojang.checkPremium(name).thenApply(result ->
+                LicensedNameRules.isLicensedExactConflict(name, result.status(), result.canonicalName())
+                        ? Optional.of("Ник " + name + " зарегистрирован в Mojang как лицензионный. "
+                        + "Кракнутый аккаунт с этим ником конфликтует с владельцем лицензии.")
+                        : Optional.empty());
     }
 
     @Override

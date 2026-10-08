@@ -262,6 +262,9 @@ public class AuthEventHandler {
         boolean registered = authManager.getStorage().load(player.getUUID()).isPresent()
                 || authManager.getStorage().loadByExactUsername(player.getScoreboardName()).isPresent();
         String message = registered ? ModConfig.SERVER.msgLoginPrompt.get() : ModConfig.SERVER.msgRegisterPrompt.get();
+        if (authManager.isLicensedNameConflict(player.getUUID())) {
+            message = message + "\n" + ModConfig.SERVER.msgLicensedNameOccupied.get();
+        }
         player.sendSystemMessage(Component.literal(colorize(message)));
     }
 

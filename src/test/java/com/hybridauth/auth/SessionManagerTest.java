@@ -45,7 +45,7 @@ class SessionManagerTest {
     }
 
     @Test
-    void successfulChecksRefreshSlidingWindow() {
+    void validChecksDoNotExtendSession() {
         MutableClock clock = new MutableClock();
         SessionManager sessions = new SessionManager(clock);
         sessions.setSessionDurationMinutes(60);
@@ -54,9 +54,9 @@ class SessionManagerTest {
         sessions.createSession("Steve", uuid, "1.2.3.4");
         clock.advanceMinutes(50);
         assertTrue(sessions.hasValidSession("Steve", uuid, "1.2.3.4"), "В пределах длительности сессия валидна");
-        clock.advanceMinutes(50); // Итого 100 минут с создания, но 0 минут с последней проверки
-        assertTrue(sessions.hasValidSession("Steve", uuid, "1.2.3.4"),
-                "Успешная проверка обновляет окно сессии (скользящее окно)");
+        clock.advanceMinutes(50); // 100 минут с создания: срок истёк, несмотря на недавнюю проверку
+        assertFalse(sessions.hasValidSession("Steve", uuid, "1.2.3.4"),
+                "Использование сессии не продлевает её: срок отсчитывается от создания");
     }
 
     @Test

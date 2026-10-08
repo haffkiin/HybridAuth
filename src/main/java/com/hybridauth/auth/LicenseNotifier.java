@@ -64,7 +64,10 @@ public final class LicenseNotifier {
                         || result.status() != com.hybridauth.auth.PremiumLookupResult.Status.PREMIUM) {
                     return;
                 }
-                String message = ModConfig.SERVER.msgCrackedPremiumNickWarning.get();
+                // Точное совпадение с лицензионным ником — конфликт; иначе это разрешённая пара (remure / ReMure)
+                String message = result.canonicalName() != null && result.canonicalName().equals(username)
+                        ? ModConfig.SERVER.msgLicensedNameOccupied.get()
+                        : ModConfig.SERVER.msgCrackedPremiumNickWarning.get();
                 player.sendSystemMessage(Component.literal(colorize(message)));
                 player.connection.send(new ClientboundSetActionBarTextPacket(
                         Component.literal(colorize(message.replace("\n", " ")))));
