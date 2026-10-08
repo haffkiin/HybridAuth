@@ -256,7 +256,7 @@ public class AuthManager {
 
     private String colorize(String message) {
         // \n \u0432 \u0442\u0435\u043A\u0441\u0442\u0435 Minecraft \u0440\u0438\u0441\u0443\u0435\u0442 \u043A\u0430\u043A \u0437\u043D\u0430\u0447\u043E\u043A [CR], \u043F\u043E\u044D\u0442\u043E\u043C\u0443 \u043F\u0435\u0440\u0435\u043D\u043E\u0441\u044B \u0437\u0430\u043C\u0435\u043D\u044F\u0435\u043C \u043F\u0440\u043E\u0431\u0435\u043B\u043E\u043C
-        return message.replace("&", "\u00A7").replace("\n", " ");
+        return message.replace("&", "\u00A7").replace("\r", "").replace("\n", " ");
     }
 
     public PlayerStorage getStorage() {

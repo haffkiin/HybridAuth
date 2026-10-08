@@ -1,4 +1,4 @@
-# HybridAuth 1.3.0
+# HybridAuth 1.3.1
 
 Server-only hybrid authentication for NeoForge 1.21.1. The server remains `online-mode=false`: premium accounts authenticate through Mojang session verification, while cracked accounts use the existing password/recovery flow.
 
@@ -109,6 +109,10 @@ The handler runs on the server thread with both accounts offline. It must either
 The public HybridAuth API exposes identity resolution and server-thread whitelist operations to the Discord companion. HybridAuth has no dependency on Discord or JDA; if the Discord bot is disabled, Minecraft authentication is unaffected.
 
 The `AccountTransfers` registry is a second extension point for other mods (see [Account transfer](#account-transfer)).
+
+## Changelog 1.3.1
+
+- **Fix**: kick and chat messages no longer show a stray glyph where a line break was in the config (CR/LF characters are now stripped; line breaks become spaces).
 
 ## Changelog 1.3.0
 

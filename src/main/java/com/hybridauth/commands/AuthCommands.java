@@ -671,6 +671,6 @@ public class AuthCommands {
 
     private static String colorize(String message) {
         // \n в тексте Minecraft рисует как значок [CR], поэтому переносы заменяем пробелом
-        return message.replace("&", "§").replace("\n", " ");
+        return message.replace("&", "§").replace("\r", "").replace("\n", " ");
     }
 }
