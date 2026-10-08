@@ -6,7 +6,7 @@
 
 Лицензионные игроки входят автоматически, пираты — по паролю, и у всех есть скины.
 
-![Версия](https://img.shields.io/badge/версия-2.0.0-8A2BE2?style=for-the-badge)
+![Версия](https://img.shields.io/badge/версия-2.0.1-8A2BE2?style=for-the-badge)
 ![NeoForge](https://img.shields.io/badge/NeoForge-21.1-F16436?style=for-the-badge)
 ![Minecraft](https://img.shields.io/badge/Minecraft-1.21.1-62B47A?style=for-the-badge)
 ![Java](https://img.shields.io/badge/Java-21-007396?style=for-the-badge)
@@ -261,6 +261,13 @@ AccountTransfers.register(new AccountTransferHandler() {
 ---
 
 ## 📜 История изменений
+
+### 2.0.1
+
+- **Лицензия:** репозиторий публичный, все права защищены. Это отражено в файле `LICENSE` и в метаданных мода (`license` в `neoforge.mods.toml`, раньше там было `MIT`). Участок, адаптированный из SkinRestorer, остаётся под MIT.
+- Автор и описание мода в метаданных обновлены, описание на русском.
+- Комментарии конфига, записи в консоли и тексты ошибок переведены на русский.
+- Изменений в работе мода нет, обновление необязательное: достаточно заменить jar.
 
 ### 2.0.0 — скины
 
