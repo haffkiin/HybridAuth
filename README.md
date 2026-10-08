@@ -1,4 +1,4 @@
-# HybridAuth 1.3.1
+# HybridAuth 2.0.0
 
 Server-only hybrid authentication for NeoForge 1.21.1. The server remains `online-mode=false`: premium accounts authenticate through Mojang session verification, while cracked accounts use the existing password/recovery flow.
 
@@ -48,6 +48,10 @@ Player commands (permission level 0):
 | `/changepassword <old> <new> <confirm>` | Change the password of a logged-in password account; also invalidates the IP session |
 | `/recoverycode` | Re-issue the one-time recovery code (requires prior login) |
 | `/recover <code> <password> <confirm>` | Reset the password with a one-time recovery code |
+| `/skin nick <name>` (`/skin <name>`) | Take the skin of a licensed Mojang account |
+| `/skin url <link> [classic|slim]` | Make a skin from a PNG link (needs a MineSkin key, see [Skins](#skins)) |
+| `/skin reset` | Drop the chosen skin (licensed players get their Mojang skin back) |
+| `/skin info` | Show the chosen skin |
 
 Admin commands (permission level 3):
 
@@ -62,6 +66,22 @@ Admin commands (permission level 3):
 | `/hybridauth status` | Account totals, premium/cracked split, active sessions, authenticated players online |
 | `/hybridauth transfer <old> <new>` | Preview moving a cracked account to a new nick (nothing changes) |
 | `/hybridauth transfer <old> <new> confirm` | Move the account to the new nick; see [Account transfer](#account-transfer) |
+| `/hybridauth skin <account> nick <name>` / `url <link>` / `reset` / `info` | Set, drop or inspect the skin of any account (no cooldown), online or offline |
+
+## Skins
+
+Cracked players have no skin on an offline server: everyone is Steve or Alex. HybridAuth gives them one.
+
+- `/skin nick <name>` takes the skin of a licensed Mojang account (signed textures from the Mojang session server; no key needed).
+- `/skin url <link> [classic|slim]` makes a skin from a PNG link. The client only accepts textures from Mojang domains, so the link is sent to [MineSkin](https://mineskin.org), which uploads the skin to a Mojang account and returns signed textures. This needs a MineSkin API key in `[skins] mineskinApiKey` (https://account.mineskin.org/keys). The link and the image go to MineSkin; skins are created `unlisted`. Without a key `/skin url` says it is not configured and `/skin nick` still works.
+- The chosen skin is saved per UUID in `config/hybridauth/skins.json` (atomic writes, `.bak` copy of the previous file) and applied at every join before the player is announced to others. Changing it while online updates the skin for everyone nearby at once and re-sends the world state to the player (same packet sequence as a respawn that keeps all data).
+- `/hybridauth transfer` moves the skin together with the account; a failed transfer rolls it back.
+- Licensed players are not touched by default (they keep their Mojang skin). They may use `/skin` too, and `/skin reset` restores the skin Mojang gave them at login.
+- Limits: `cooldownSeconds` (30) between `nick`/`reset`, `urlCooldownSeconds` (120) between `url` requests, one request at a time per player, `urlAllowedDomains` (empty = any public site; `localhost`, IP addresses and internal names are always refused), `requestTimeoutSeconds` for MineSkin. Mojang answers are cached for 10 minutes.
+- Nothing is fetched automatically by nick: a cracked `ReMure` would otherwise get the skin of the licensed `ReMure`.
+- Messages are in `[skinMessages]`. Audit events: `SKIN_SET`, `SKIN_RESET`.
+
+The skin refresh packet sequence is adapted from [SkinRestorer](https://github.com/Suiranoil/SkinRestorer) (MIT, © Lionarius); see `THIRD_PARTY_NOTICES.md`.
 
 ## Security notes
 
@@ -109,6 +129,14 @@ The handler runs on the server thread with both accounts offline. It must either
 The public HybridAuth API exposes identity resolution and server-thread whitelist operations to the Discord companion. HybridAuth has no dependency on Discord or JDA; if the Discord bot is disabled, Minecraft authentication is unaffected.
 
 The `AccountTransfers` registry is a second extension point for other mods (see [Account transfer](#account-transfer)).
+
+## Changelog 2.0.0
+
+- **New: skins for cracked players.** `/skin nick`, `/skin url`, `/skin reset`, `/skin info`, admin `/hybridauth skin`. Skins are stored in `skins.json`, applied at join and refreshed live, and move with `/hybridauth transfer`. See [Skins](#skins).
+- New config sections `[skins]` and `[skinMessages]`. `/skin url` stays off until `mineskinApiKey` is set.
+- Three new mixins (`PlayerList.placeNewPlayer`, `ChunkMap` and `ChunkMap$TrackedEntity` accessors).
+- The transfer preview shows the skin line; the transfer backup includes `skins.json`.
+- **Fix**: the "your nick is licensed, automatic login" notice was sent twice on a premium login; now once. The licensed-nick message calls the account "пиратка" and uses the red/yellow colours again.
 
 ## Changelog 1.3.1
 
