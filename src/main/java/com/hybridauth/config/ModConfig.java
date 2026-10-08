@@ -122,62 +122,62 @@ public class ModConfig {
 
         public ServerConfig(ModConfigSpec.Builder builder) {
             builder.push("general");
-            enabled = builder.comment("Enable/disable the mod").define("enabled", true);
+            enabled = builder.comment("Включить или выключить мод").define("enabled", true);
             builder.pop();
 
             builder.push("premium");
-            enablePremiumAutologin = builder.comment("Enable auto-login for premium players").define("enablePremiumAutologin", true);
-            onMojangApiFailure = builder.comment("Action on Mojang API failure").defineEnum("onMojangApiFailure", ApiFailureAction.KICK);
-            mojangApiTimeoutMs = builder.comment("API timeout in milliseconds").defineInRange("mojangApiTimeoutMs", 5000, 1000, 30000);
-            cacheExpirationMinutes = builder.comment("Cache expiration time in minutes").defineInRange("cacheExpirationMinutes", 10, 1, 1440);
+            enablePremiumAutologin = builder.comment("Автоматический вход для лицензионных игроков").define("enablePremiumAutologin", true);
+            onMojangApiFailure = builder.comment("Что делать, если API Mojang недоступен: KICK — отключить игрока, ALLOW_CRACKED — пускать только известные пиратские аккаунты").defineEnum("onMojangApiFailure", ApiFailureAction.KICK);
+            mojangApiTimeoutMs = builder.comment("Таймаут запросов к API Mojang, мс").defineInRange("mojangApiTimeoutMs", 5000, 1000, 30000);
+            cacheExpirationMinutes = builder.comment("Сколько хранить ответы Mojang в кэше, минут").defineInRange("cacheExpirationMinutes", 10, 1, 1440);
             autoRepairVerifiedWhitelist = builder.comment(
-                    "Repair only proven premium/offline whitelist mismatches after creating a backup")
+                    "Исправлять в whitelist только доказанные расхождения лицензионного и офлайн-UUID, предварительно сделав бэкап")
                     .define("autoRepairVerifiedWhitelist", true);
-            premiumSpawnProtection = builder.comment("Protect premium players from damage until their first movement after joining")
+            premiumSpawnProtection = builder.comment("Защищать лицензионных игроков от урона до первого движения после входа")
                     .define("premiumSpawnProtection", true);
-            premiumSpawnProtectionSeconds = builder.comment("Maximum duration of premium spawn protection in seconds")
+            premiumSpawnProtectionSeconds = builder.comment("Максимальная длительность защиты после входа, секунд")
                     .defineInRange("premiumSpawnProtectionSeconds", 5, 1, 60);
             builder.pop();
 
             builder.push("cracked");
-            minPasswordLength = builder.comment("Minimum password length").defineInRange("minPasswordLength", 6, 1, 64);
-            maxPasswordLength = builder.comment("Maximum password length").defineInRange("maxPasswordLength", 64, 8, 256);
-            maxLoginAttempts = builder.comment("Max login attempts before kick").defineInRange("maxLoginAttempts", 5, 1, 20);
-            loginAttemptWindowSeconds = builder.comment("Window for failed login attempts")
+            minPasswordLength = builder.comment("Минимальная длина пароля").defineInRange("minPasswordLength", 6, 1, 64);
+            maxPasswordLength = builder.comment("Максимальная длина пароля").defineInRange("maxPasswordLength", 64, 8, 256);
+            maxLoginAttempts = builder.comment("Сколько неудачных попыток входа допускается до блокировки").defineInRange("maxLoginAttempts", 5, 1, 20);
+            loginAttemptWindowSeconds = builder.comment("За какое время считаются неудачные попытки, секунд")
                     .defineInRange("loginAttemptWindowSeconds", 300, 30, 86400);
-            loginLockoutSeconds = builder.comment("Lockout after too many failed attempts")
+            loginLockoutSeconds = builder.comment("На сколько блокируется вход после превышения попыток, секунд")
                     .defineInRange("loginLockoutSeconds", 300, 30, 86400);
-            authTimeoutSeconds = builder.comment("Time to login/register before kick (0 = disabled)").defineInRange("authTimeoutSeconds", 60, 0, 600);
-            enableIpSession = builder.comment("Remember IP to avoid entering password every time. Disable on servers with many shared IPs (NAT, mobile operators)")
+            authTimeoutSeconds = builder.comment("Время на вход или регистрацию до отключения, секунд (0 — без ограничения)").defineInRange("authTimeoutSeconds", 60, 0, 600);
+            enableIpSession = builder.comment("Запоминать IP, чтобы не вводить пароль при каждом входе. Отключите, если у игроков общие адреса (NAT, мобильные операторы)")
                     .define("enableIpSession", true);
-            sessionDurationMinutes = builder.comment("IP session lifetime in minutes, counted from the last password/license login. Not extended by use. (0 = until server restart)")
+            sessionDurationMinutes = builder.comment("Время жизни IP-сессии, минут, от последнего входа по паролю или лицензии. Использование её не продлевает. (0 — до перезапуска сервера)")
                     .defineInRange("sessionDurationMinutes", 720, 0, Integer.MAX_VALUE);
             builder.pop();
 
             builder.push("skins");
-            skinsEnabled = builder.comment("Enable the /skin command and applying saved skins on join")
+            skinsEnabled = builder.comment("Включить команду /skin и применение сохранённых скинов при входе")
                     .define("enabled", true);
-            skinsNickEnabled = builder.comment("Allow /skin nick <name>: take the skin of a licensed Mojang account")
+            skinsNickEnabled = builder.comment("Разрешить /skin <ник>: взять скин лицензионного аккаунта Mojang")
                     .define("nickEnabled", true);
-            skinsUrlEnabled = builder.comment("Allow /skin url <link>. Works only when mineskinApiKey is set")
+            skinsUrlEnabled = builder.comment("Разрешить /skin url <ссылка>. Работает только если задан mineskinApiKey")
                     .define("urlEnabled", true);
             skinsMineskinApiKey = builder.comment(
-                    "MineSkin API key (https://account.mineskin.org/keys). Needed for /skin url: the image link is sent to MineSkin, "
-                            + "which uploads the skin to Mojang to get a signed texture. Keep this file private.")
+                    "Ключ MineSkin API (https://account.mineskin.org/keys). Нужен для /skin url: ссылка на картинку уходит в MineSkin, "
+                            + "который загружает скин в Mojang и возвращает подписанную текстуру. Храните этот файл в тайне.")
                     .define("mineskinApiKey", "");
             skinsUrlAllowedDomains = builder.comment(
-                    "Sites allowed for /skin url, e.g. [\"i.imgur.com\", \"*.discordapp.com\"]. Empty list = any public site")
+                    "Сайты, разрешённые для /skin url, например [\"i.imgur.com\", \"*.discordapp.com\"]. Пустой список — любой публичный сайт")
                     .defineListAllowEmpty("urlAllowedDomains", List.of(), () -> "", value -> value instanceof String);
-            skinsCooldownSeconds = builder.comment("Pause between /skin nick and /skin reset requests of one player")
+            skinsCooldownSeconds = builder.comment("Пауза между /skin <ник> и /skin reset одного игрока, секунд")
                     .defineInRange("cooldownSeconds", 1, 0, 86400);
-            skinsUrlCooldownSeconds = builder.comment("Pause between /skin url requests of one player (MineSkin has limits)")
+            skinsUrlCooldownSeconds = builder.comment("Пауза между /skin url и /skin model одного игрока, секунд (у MineSkin есть лимиты)")
                     .defineInRange("urlCooldownSeconds", 1, 0, 86400);
-            skinsRequestTimeoutSeconds = builder.comment("How long to wait for MineSkin to create a skin")
+            skinsRequestTimeoutSeconds = builder.comment("Сколько ждать создания скина в MineSkin, секунд")
                     .defineInRange("requestTimeoutSeconds", 45, 10, 300);
             builder.pop();
 
             builder.push("skinMessages");
-            msgSkinHelp = builder.comment("Shown by /skin and /skin help, one chat line per entry")
+            msgSkinHelp = builder.comment("Показывается по /skin и /skin help, одна строка чата на элемент списка")
                     .defineListAllowEmpty("help", List.of(
                             "§6§lСкины",
                             "§e/skin <ник> §7— скин любого лицензионного игрока (ники можно смотреть на namemc.com).",

@@ -141,7 +141,7 @@ public final class WhitelistGatewayImpl implements WhitelistGateway {
 
     private static void requireServerThread(MinecraftServer server) {
         if (server == null || !server.isSameThread()) {
-            throw new IllegalStateException("Whitelist operations must run on the Minecraft server thread");
+            throw new IllegalStateException("Операции с whitelist нужно выполнять на потоке сервера Minecraft");
         }
     }
 

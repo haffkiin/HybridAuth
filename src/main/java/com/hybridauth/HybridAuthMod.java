@@ -65,7 +65,7 @@ public class HybridAuthMod {
     }
 
     private void setup(final FMLCommonSetupEvent event) {
-        LOGGER.info("[HybridAuth] Common Setup...");
+        LOGGER.info("[HybridAuth] Общая настройка...");
         
         mojangClient = new MojangApiClient();
         

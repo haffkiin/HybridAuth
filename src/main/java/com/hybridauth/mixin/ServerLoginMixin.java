@@ -270,7 +270,7 @@ public abstract class ServerLoginMixin {
         try {
             byte[] verifyToken = this.hybridAuth_challenge != null ? this.hybridAuth_challenge : this.challenge;
             if (!packet.isChallengeValid(verifyToken, privateKey)) {
-                throw new IllegalStateException("Protocol error");
+                throw new IllegalStateException("Ошибка протокола");
             }
 
             javax.crypto.SecretKey sharedSecret = packet.getSecretKey(privateKey);

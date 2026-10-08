@@ -14,7 +14,7 @@ public record IdentityResolution(Status status, ResolvedIdentity identity) {
 
     public static IdentityResolution failed(Status status) {
         if (status == Status.RESOLVED) {
-            throw new IllegalArgumentException("RESOLVED requires an identity");
+            throw new IllegalArgumentException("Для статуса RESOLVED нужен профиль игрока");
         }
         return new IdentityResolution(status, null);
     }

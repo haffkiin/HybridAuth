@@ -34,7 +34,7 @@ public final class WhitelistRepairService {
             PlayerStorage storage,
             Path configDir) {
         if (!server.isSameThread()) {
-            throw new IllegalStateException("Whitelist repair must run on the Minecraft server thread");
+            throw new IllegalStateException("Исправление whitelist нужно выполнять на потоке сервера Minecraft");
         }
 
         UserWhiteList whitelist = server.getPlayerList().getWhiteList();
@@ -83,7 +83,7 @@ public final class WhitelistRepairService {
         }
 
         if (changes.isEmpty()) {
-            LOGGER.info("[HybridAuth] Verified whitelist repair found no safe changes.");
+            LOGGER.info("[HybridAuth] Проверка whitelist не нашла безопасных исправлений.");
             return new RepairReport(false, null, null, List.of());
         }
 
@@ -99,7 +99,7 @@ public final class WhitelistRepairService {
             }
             whitelist.save();
         } catch (IOException exception) {
-            LOGGER.error("[HybridAuth] Could not persist repaired whitelist; backup remains at {}", backup, exception);
+            LOGGER.error("[HybridAuth] Не удалось сохранить исправленный whitelist; бэкап остался в {}", backup, exception);
             return new RepairReport(true, backup.toString(), null, changes);
         }
 
@@ -111,9 +111,9 @@ public final class WhitelistRepairService {
             Files.createDirectories(report.getParent());
             Files.writeString(report, GSON.toJson(result), StandardCharsets.UTF_8);
         } catch (IOException exception) {
-            LOGGER.error("[HybridAuth] Repaired whitelist but could not write report", exception);
+            LOGGER.error("[HybridAuth] Whitelist исправлен, но отчёт записать не удалось", exception);
         }
-        LOGGER.warn("[HybridAuth] Repaired {} verified whitelist entries; backup: {}", changes.size(), backup);
+        LOGGER.warn("[HybridAuth] Исправлено записей whitelist: {}; бэкап: {}", changes.size(), backup);
         return result;
     }
 
@@ -125,7 +125,7 @@ public final class WhitelistRepairService {
             Files.copy(whitelistFile, backup, StandardCopyOption.COPY_ATTRIBUTES);
             return backup;
         } catch (IOException exception) {
-            throw new IllegalStateException("Could not back up whitelist before repair", exception);
+            throw new IllegalStateException("Не удалось сделать бэкап whitelist перед исправлением", exception);
         }
     }
 

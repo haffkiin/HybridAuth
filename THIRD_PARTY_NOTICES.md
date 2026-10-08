@@ -1,10 +1,11 @@
-# Third-party notices
+# Сторонний код и лицензии
 
 ## SkinRestorer
 
-The packet sequence that refreshes a player's skin on the server (`com.hybridauth.skin.SkinRefresher`, and the
-`ChunkMapAccessor` / `TrackedEntityAccessor` mixins it needs) is adapted from SkinRestorer:
-https://github.com/Suiranoil/SkinRestorer
+Последовательность пакетов, которая показывает игроку новый скин на работающем сервере
+(`com.hybridauth.skin.SkinRefresher` и два миксина-акцессора `ChunkMapAccessor` и `TrackedEntityAccessor`),
+адаптирована из мода SkinRestorer: <https://github.com/Suiranoil/SkinRestorer>. Он распространяется по лицензии MIT,
+текст лицензии приведён ниже в оригинале, как того требует сама лицензия.
 
 ```
 MIT License
@@ -30,5 +31,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-The rest of the skin module (storage, Mojang and MineSkin clients, commands) is original to HybridAuth. MineSkin
-(https://mineskin.org) and the Mojang session server are used through their public HTTP APIs.
+## Что написано заново
+
+Остальной модуль скинов (хранилище, клиенты Mojang и MineSkin, команды) — собственный код HybridAuth.
+MineSkin (<https://mineskin.org>) и сервер сессий Mojang используются через их публичные HTTP API.

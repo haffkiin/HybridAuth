@@ -78,7 +78,7 @@ public class AuthAuditLogger {
                     StandardOpenOption.CREATE,
                     StandardOpenOption.APPEND);
         } catch (IOException e) {
-            LOGGER.error("[HybridAuth] Failed to write authentication audit log.", e);
+            LOGGER.error("[HybridAuth] Не удалось записать журнал аудита авторизации.", e);
         }
     }
 

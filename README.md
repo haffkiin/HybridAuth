@@ -1,16 +1,202 @@
-# HybridAuth 2.0.0
+<div align="center">
 
-Server-only hybrid authentication for NeoForge 1.21.1. The server remains `online-mode=false`: premium accounts authenticate through Mojang session verification, while cracked accounts use the existing password/recovery flow.
+# 🔐 HybridAuth
 
-HybridAuth is also the single source of truth for Minecraft identity profiles and whitelist operations. `SMPIdentityDiscord` calls its API instead of calculating UUIDs independently.
+**Гибридная авторизация и скины для серверов NeoForge 1.21.1**
 
-## Data safety
+Лицензионные игроки входят автоматически, пираты — по паролю, и у всех есть скины.
 
-The existing `config/hybridauth/players.json` format is preserved. Password hashes, recovery hashes, registration timestamps, login timestamps, and audit logs are not removed. Authentication records are never silently deleted when a UUID differs; conflicts are logged and left for explicit review.
+![Версия](https://img.shields.io/badge/версия-2.0.0-8A2BE2?style=for-the-badge)
+![NeoForge](https://img.shields.io/badge/NeoForge-21.1-F16436?style=for-the-badge)
+![Minecraft](https://img.shields.io/badge/Minecraft-1.21.1-62B47A?style=for-the-badge)
+![Java](https://img.shields.io/badge/Java-21-007396?style=for-the-badge)
+![Только сервер](https://img.shields.io/badge/ставится-только%20на%20сервер-555?style=for-the-badge)
 
-On startup, verified premium entries that were previously written with an offline UUID can be repaired. The original `whitelist.json` is copied to `config/hybridauth/backups/` before any change, and a JSON report is written beside it. Unknown or ambiguous entries are left untouched.
+</div>
 
-## Important settings
+Мод ставится **только на сервер**, клиентам ничего устанавливать не нужно. Сервер остаётся в режиме `online-mode=false`: лицензионные аккаунты проверяются через сессионные серверы Mojang, пиратские входят по паролю с кодом восстановления.
+
+HybridAuth также является единственным источником правды о профилях игроков и операциях с whitelist: Discord-модуль `SMPIdentityDiscord` обращается к его API и не считает UUID самостоятельно.
+
+---
+
+## ✨ Возможности
+
+| | |
+|---|---|
+| 🟢 **Автовход лицензии** | Проверка через Mojang, пароль не нужен. Игрок видит подтверждение в чате и на экране |
+| 🔑 **Пароли для пиратов** | PBKDF2-HmacSHA256, 310 000 итераций, код восстановления, защита от подбора |
+| 🎨 **Скины для пиратов** | `/skin <ник>` и `/skin url <ссылка>`: скин сохраняется и меняется на лету, без перезахода |
+| 🚚 **Перенос аккаунта** | Все данные пиратки уезжают на новый ник одной командой, с бэкапом и откатом |
+| 🛡️ **Защита** | Лимиты попыток, защита от дублей входа, IP-сессии с ограниченным сроком, аудит-журнал |
+| 🧩 **API для других модов** | Профили, whitelist и перенос данных аккаунтов |
+
+## 📚 Содержание
+
+- [Как это работает](#-как-это-работает)
+- [Установка](#-установка)
+- [Команды](#-команды)
+- [Скины](#-скины)
+- [Ники и лицензия](#-ники-и-лицензия)
+- [Перенос аккаунта](#-перенос-аккаунта)
+- [Настройки](#-настройки)
+- [Безопасность](#-безопасность)
+- [Для разработчиков](#-для-разработчиков)
+- [История изменений](#-история-изменений)
+
+---
+
+## 🧭 Как это работает
+
+```mermaid
+flowchart TD
+    A([Игрок подключается]) --> B{Есть пиратская запись<br/>с точно таким ником?}
+    B -- да --> C[Вход по паролю]
+    C --> C2{Ник ещё и лицензионный<br/>в Mojang?}
+    C2 -- да --> C3[Предупреждение владельцу<br/>и техподдержке]
+    B -- нет --> D{Ник есть в Mojang?}
+    D -- нет --> E[Новая пиратка:<br/>/register или /login]
+    D -- да --> F[Проверка сессии Mojang]
+    F -- пройдена --> G([Автовход,<br/>лицензия подтверждена])
+    F -- не пройдена --> H([Отключение])
+    D -. API Mojang недоступен .-> I{onMojangApiFailure}
+    I -- KICK --> H
+    I -- ALLOW_CRACKED --> J[Пускаем только<br/>известные пиратки]
+```
+
+> [!IMPORTANT]
+> Пиратская запись на лицензионном нике **не пускает владельца лицензии**. Пирата это не выгоняет: он играет с паролем, пока поддержка не перенесёт его аккаунт на другой ник командой [`/hybridauth transfer`](#-перенос-аккаунта).
+
+## 📦 Установка
+
+1. Положите `hybridauth-<версия>.jar` в папку `mods/` сервера (NeoForge 21.1.x, Java 21).
+2. В `server.properties` поставьте `online-mode=false`.
+3. Запустите сервер: появятся `config/hybridauth-server.toml` и папка `config/hybridauth/`.
+4. По желанию задайте ключ MineSkin для скинов по ссылке (см. [Скины](#-скины)).
+
+> [!NOTE]
+> Формат `config/hybridauth/players.json` сохраняется между версиями. Хеши паролей, коды восстановления, даты регистрации и входа и журнал аудита никогда не удаляются. Если UUID записи не совпадает, запись не стирается: конфликт попадает в журнал и ждёт ручного разбора.
+>
+> При запуске подтверждённые лицензионные записи, ранее попавшие в whitelist с офлайн-UUID, исправляются. Перед любым изменением исходный `whitelist.json` копируется в `config/hybridauth/backups/`, рядом записывается JSON-отчёт. Неизвестные и спорные записи остаются как есть.
+
+## 💬 Команды
+
+### Игрокам (уровень доступа 0)
+
+| Команда | Что делает |
+|---|---|
+| `/register <пароль> <повтор>` (`/reg`) | Регистрация пиратского аккаунта |
+| `/login <пароль>` (`/l`) | Вход по паролю |
+| `/changepassword <старый> <новый> <повтор>` | Смена пароля, IP-сессия при этом сбрасывается |
+| `/recoverycode` | Выдать новый одноразовый код восстановления (после входа) |
+| `/recover <код> <пароль> <повтор>` | Сброс пароля по одноразовому коду |
+| `/skin <ник>` или `/skin nick <ник>` | Взять скин лицензионного аккаунта |
+| `/skin url <ссылка> [classic или slim]` | Сделать скин из PNG по ссылке |
+| `/skin model <slim или classic>` | Сменить модель рук у выбранного скина |
+| `/skin reset` | Убрать выбранный скин |
+| `/skin info` | Показать выбранный скин |
+| `/skin help` | Инструкция в игре (то же покажет `/skin` без аргументов) |
+
+### Администраторам (уровень доступа 3)
+
+| Команда | Что делает |
+|---|---|
+| `/hybridauth reload` | Полная перезагрузка настроек, включая таймаут и кэш Mojang и ключ MineSkin |
+| `/hybridauth backup` | Немедленный бэкап базы авторизации |
+| `/hybridauth recovery <ник>` | Выдать игроку одноразовый код восстановления |
+| `/hybridauth info <ник>` | Тип аккаунта, UUID, даты регистрации и входа, IP |
+| `/hybridauth unregister <ник>` | Удалить аккаунт: бэкап делается автоматически, игрок на сервере отключается |
+| `/hybridauth list` | Список аккаунтов (вывод ограничен) |
+| `/hybridauth status` | Всего аккаунтов, соотношение лицензия/пиратка, активные сессии, авторизованные онлайн |
+| `/hybridauth transfer <старый> <новый>` | Предпросмотр переноса пиратки на новый ник, ничего не меняет |
+| `/hybridauth transfer <старый> <новый> confirm` | Выполнить перенос, см. [Перенос аккаунта](#-перенос-аккаунта) |
+| `/hybridauth skin <аккаунт> nick <ник>` | Назначить аккаунту скин по нику, без паузы |
+| `/hybridauth skin <аккаунт> url <ссылка>` | Назначить скин по ссылке |
+| `/hybridauth skin <аккаунт> model <slim или classic>` | Сменить модель рук |
+| `/hybridauth skin <аккаунт> reset` / `info` | Сбросить скин или посмотреть его |
+
+> [!TIP]
+> `unregister` и `info` ищут ник строго с учётом регистра. Если точного совпадения нет, но есть запись с другим регистром, команда подскажет её.
+
+## 🎨 Скины
+
+На офлайн-сервере у всех пиратов скин Стива или Алекс. HybridAuth даёт им настоящие скины.
+
+### Как сменить скин (инструкция для игроков)
+
+**Скин другого игрока.** Введите `/skin <ник>`, например `/skin jeb_`. Ник должен принадлежать лицензионному аккаунту. Посмотреть чужие скины можно на [namemc.com](https://namemc.com).
+
+**Свой скин из файла:**
+
+1. Выложите PNG-файл скина (64×64 или 64×32) на любой хостинг картинок: [imgur.com](https://imgur.com), [postimages.org](https://postimages.org) или отправьте файл себе в Discord.
+2. Скопируйте **прямую ссылку на картинку**: она ведёт на сам PNG, а не на страницу с ним (например, `https://i.imgur.com/xxxx.png`).
+3. Введите `/skin url <ссылка>`. В конце можно добавить `slim` (тонкие руки) или `classic` (обычные).
+4. Через несколько секунд скин сменится у вас и у всех рядом, перезаходить не нужно.
+
+После каждой смены в чате появляется строка **«Руки: … Сменить: [тонкие] [обычные]»**: нажмите кнопку, и модель рук поменяется без повторной загрузки. То же делает `/skin model slim` или `/skin model classic`.
+
+### Как это устроено
+
+- Скин лицензионного аккаунта берётся с сервера сессий Mojang вместе с подписью, ключ не нужен.
+- Клиент принимает текстуры только с доменов Mojang. Поэтому ссылка отправляется в [MineSkin](https://mineskin.org): сервис загружает скин на аккаунт Mojang и возвращает подписанную текстуру. Для этого нужен API-ключ в `[skins] mineskinApiKey` (получить: <https://account.mineskin.org/keys>). Скины создаются как `unlisted`. Без ключа работает `/skin <ник>`, а `/skin url` и `/skin model` сообщают, что не настроены.
+- Выбор хранится по UUID в `config/hybridauth/skins.json` (атомарная запись, рядом остаётся копия `.bak`) и применяется при каждом входе до того, как игрока увидят остальные.
+- При смене скина онлайн всем рядом показывается новый скин, а игроку повторно отправляется состояние мира: ту же последовательность пакетов использует респавн с сохранением всех данных.
+- `/hybridauth transfer` переносит скин вместе с аккаунтом, при сбое переноса скин откатывается.
+- Лицензионных игроков мод по умолчанию не трогает: у них остаётся скин Mojang. Они тоже могут пользоваться `/skin`, а `/skin reset` вернёт скин, выданный Mojang при входе.
+- Скин **не подбирается автоматически по нику**: иначе пират `ReMure` получил бы скин лицензионного `ReMure`.
+
+### Ограничения
+
+| Настройка | По умолчанию | Смысл |
+|---|---|---|
+| `cooldownSeconds` | 1 | Пауза между `/skin <ник>` и `/skin reset` |
+| `urlCooldownSeconds` | 1 | Пауза между `/skin url` и `/skin model` |
+| `urlAllowedDomains` | пусто | Разрешённые сайты; пусто — любой публичный. `localhost`, IP-адреса и внутренние имена отклоняются всегда |
+| `requestTimeoutSeconds` | 45 | Сколько ждать создания скина в MineSkin |
+
+Один игрок выполняет один запрос за раз. Неудачный запрос паузу не включает. Ответы Mojang кэшируются на 10 минут. Сообщения настраиваются в `[skinMessages]`, в журнал аудита пишутся события `SKIN_SET` и `SKIN_RESET`.
+
+> [!WARNING]
+> Ссылка и картинка уходят во внешний сервис MineSkin. Ключ `mineskinApiKey` хранится в `hybridauth-server.toml` открытым текстом: не публикуйте файл и не присылайте его в чаты.
+
+## 🧾 Ники и лицензия
+
+### Политика регистра
+
+Пиратские записи хранятся с точным регистром. Намеренная пара, например `ReMure` (лицензия) и `remure` (пиратка), допустима. Лицензионный игрок обязан заходить с каноническим регистром Mojang. Конфликты по точному нику и по UUID никогда не склеиваются молча.
+
+Если пиратская запись уже занимает **точный лицензионный ник** (`ReMure`), пират продолжает входить по паролю, а владелец лицензии войти не может: запись не заменяется, а на экране входа и при таймауте показывается сообщение `licensedNameOccupied`. Оно советует пирату перенести аккаунт, а владельцу лицензии обратиться в техподдержку. Поддержка переносит пиратку командой [`/hybridauth transfer`](#-перенос-аккаунта), после этого владелец лицензии заходит.
+
+### Видимость статуса ника
+
+Игрок всегда видит, лицензионный ли у него ник, и в чате, и на экране (титул и actionbar), чтобы сообщение было заметно в любом лаунчере:
+
+- **Лицензионные игроки** при каждом входе получают подтверждение: ник лицензионный, вход проверен сессионными серверами Mojang.
+- **Пираты с ником, занятым в Mojang**, получают предупреждение, что ник принадлежит лицензионному аккаунту. Проверка идёт через общий кэш Mojang и не создаёт лишней нагрузки на API.
+- Все эти сообщения, включая причины отключения (`premiumKick`, `mojangApiError`, `invalidUsername`), настраиваются в секции `[messages]` файла `config/hybridauth-server.toml`.
+
+## 🚚 Перенос аккаунта
+
+`/hybridauth transfer <старый> <новый>` переносит пиратский аккаунт на новый ник. Команда нужна, чтобы освободить ник, который занял владелец лицензии, например когда поддержка разбирает пиратскую запись на нике, зарегистрированном в Mojang позже. Сначала показывается предпросмотр, `confirm` запускает перенос.
+
+**Условия.** Оба игрока вне сервера. Старый аккаунт пиратский. Новый ник допустим, не лицензионный в Mojang (если Mojang не отвечает, перенос отказывает), и у него нет аккаунта, данных мира и конфликтов в whitelist, op и банах.
+
+**Что переносится:**
+
+| Данные | Подробности |
+|---|---|
+| Запись авторизации | Хеш пароля, хеш кода восстановления, даты входа, под новым UUID |
+| Данные мира | `playerdata/<uuid>.dat` (поле `UUID` переписывается), `.dat_old`, `stats/<uuid>.json`, `advancements/<uuid>.json`: инвентарь, позиция, опыт и данные модов, лежащие в файле игрока |
+| Списки | Whitelist, операторы (с уровнем), бан-лист |
+| Скин | Выбранный через `/skin` |
+| Данные других модов | Через `com.hybridauth.api.AccountTransfers`, см. [Для разработчиков](#-для-разработчиков) |
+
+> [!NOTE]
+> **Безопасность переноса.** До первого изменения нужные файлы и списки копируются в `config/hybridauth/backups/transfer-<время>-<старый>-to-<новый>/`, бэкап `players.json` создаётся отдельно. Если любой шаг падает, выполненные шаги откатываются в обратном порядке. Бэкап остаётся на диске.
+
+## ⚙️ Настройки
+
+Основные параметры в `config/hybridauth-server.toml`:
 
 ```toml
 [premium]
@@ -19,146 +205,80 @@ On startup, verified premium entries that were previously written with an offlin
 	mojangApiTimeoutMs = 5000
 	cacheExpirationMinutes = 10
 	autoRepairVerifiedWhitelist = true
+
+[skins]
+	enabled = true
+	mineskinApiKey = ""
 ```
 
-The Mojang profile cache is bounded and shared by login and Discord whitelist requests. Requests run off the server thread; repeated concurrent checks for one name are joined into one HTTP request.
+Кэш профилей Mojang ограничен по размеру и общий для входа и запросов Discord-модуля по whitelist. Запросы идут вне потока сервера, одновременные проверки одного ника объединяются в один HTTP-запрос.
 
-## Case policy
+В файле есть разделы: `[general]`, `[premium]`, `[cracked]` (пароли, лимиты, IP-сессии), `[skins]`, `[skinMessages]` и `[messages]` (все тексты для игроков, включая цвета через `§`). Комментарии к параметрам написаны по-русски прямо в файле.
 
-Cracked records use the exact entered case. A deliberate pair such as `ReMure` (premium) and `remure` (cracked) is allowed. The licensed player must use the canonical Mojang case. Exact-name and UUID conflicts are never silently merged.
+## 🛡️ Безопасность
 
-If a cracked record already holds the exact canonical licensed nick (`ReMure`), the cracked owner keeps logging in with the password. The licensed owner cannot enter: the cracked record is not replaced, and the login prompt and timeout message show `licensedNameOccupied`. That message tells the cracked owner to move the account and the licensed owner to contact support. Support moves the cracked account with `/hybridauth transfer` (see below), after which the licensed owner can enter. (Not yet verified on a live server.)
+- **Пароли** хешируются PBKDF2-HmacSHA256, **310 000 итераций**. Старые записи (например, 65 536 итераций) остаются рабочими и незаметно перехешируются при следующем успешном входе. Хеширование идёт в отдельном пуле потоков, не в потоке сервера.
+- **Лимиты попыток** двухуровневые: идентичность (`uuid|ник|ip`) блокируется после `maxLoginAttempts` ошибок, а общий счётчик по нику (в 3 раза выше порога) останавливает подбор даже при смене IP. Адрес последнего успешного входа для этого ника не блокируется по нику, поэтому злоумышленник не запрёт владельца с его собственного адреса. Блокировка по идентичности к нему всё же применяется.
+- Неудачные попытки считаются и для незарегистрированных ников, поэтому перебор имён тоже тормозится. `/recover` отвечает одинаково для незарегистрированного ника и для неверного кода.
+- **Ники проверяются** (`[A-Za-z0-9_]{3,16}`) на этапе входа до любого запроса в Mojang, потому что мод заменяет ванильное рукопожатие.
+- **Порядок протокола** соблюдается: пакет hello или key в неверном состоянии входа отключает клиента.
+- **Дубли входа.** Ванилла выгоняет онлайн-сессию с тем же UUID ещё до завершения входа. Пират-новичок с другого адреса отклоняется, пока онлайн авторизованная сессия: выгнать её он не может. Переподключение с того же адреса заменяет зависшую сессию, а вход лицензионного игрока, подтверждённый Mojang, так никогда не отклоняется.
+- **Журнал аудита** (`config/hybridauth/logs/auth.log`) ротируется по размеру (5 МБ), хранится до 5 архивов.
+- **IP-сессии.** Срок отсчитывается от последнего входа по паролю или лицензии (`sessionDurationMinutes`, по умолчанию 720), использование его не продлевает. Сессия привязана к IP. За общим NAT или у мобильных операторов любой с тем же IP может продолжить сессию до её окончания. Если это важно, поставьте `enableIpSession = false`.
+- **`/hybridauth unregister` и `info`** работают только с точным ником. `unregister` прерывается, если не удалось сделать бэкап.
 
-## License nick visibility
+## 🧑‍💻 Для разработчиков
 
-Players always see whether their nickname is a licensed one — both in chat and on screen (title/actionbar), so the notice is visible in every launcher:
+Публичный API HybridAuth отдаёт Discord-модулю определение профилей и операции с whitelist на потоке сервера. Зависимости от Discord и JDA нет: если бот отключён, авторизация в Minecraft не страдает.
 
-- **Premium players** get a confirmation on every login: the nickname is licensed and the entry was verified via Mojang session servers.
-- **Cracked players whose nickname is registered at Mojang** get a warning that the nickname belongs to a licensed account (checked through the shared Mojang cache, so it does not add API load).
-- All these messages (including kick reasons such as `premiumKick`, `mojangApiError`, `invalidUsername`) are configurable in the `[messages]` section of `config/hybridauth-server.toml`.
-
-## Commands
-
-Player commands (permission level 0):
-
-| Command | Description |
-|---|---|
-| `/register <password> <confirm>` (`/reg`) | Register a password account (cracked players) |
-| `/login <password>` (`/l`) | Log in with the password |
-| `/changepassword <old> <new> <confirm>` | Change the password of a logged-in password account; also invalidates the IP session |
-| `/recoverycode` | Re-issue the one-time recovery code (requires prior login) |
-| `/recover <code> <password> <confirm>` | Reset the password with a one-time recovery code |
-| `/skin nick <name>` (`/skin <name>`) | Take the skin of a licensed Mojang account |
-| `/skin url <link> [classic or slim]` | Make a skin from a PNG link (needs a MineSkin key, see [Skins](#skins)) |
-| `/skin model <slim or classic>` | Change the arm model (slim or wide) of the chosen skin; chat buttons offer this after every change |
-| `/skin reset` | Drop the chosen skin (licensed players get their Mojang skin back) |
-| `/skin info` | Show the chosen skin |
-| `/skin help` | In-game instructions (also shown by `/skin`); the text is the `[skinMessages] help` list |
-
-Admin commands (permission level 3):
-
-| Command | Description |
-|---|---|
-| `/hybridauth reload` | Fully reloads the config, including Mojang API timeout and cache settings |
-| `/hybridauth backup` | Create an immediate backup of the auth database |
-| `/hybridauth recovery <username>` | Issue a one-time recovery code for a player |
-| `/hybridauth info <username>` | Inspect an account: type, UUID, registration/last-login dates, IP |
-| `/hybridauth unregister <username>` | Delete an account; a backup is created automatically, online player is kicked |
-| `/hybridauth list` | List all accounts (capped output) |
-| `/hybridauth status` | Account totals, premium/cracked split, active sessions, authenticated players online |
-| `/hybridauth transfer <old> <new>` | Preview moving a cracked account to a new nick (nothing changes) |
-| `/hybridauth transfer <old> <new> confirm` | Move the account to the new nick; see [Account transfer](#account-transfer) |
-| `/hybridauth skin <account> nick <name>` / `url <link>` / `reset` / `info` | Set, drop or inspect the skin of any account (no cooldown), online or offline |
-
-## Skins
-
-Cracked players have no skin on an offline server: everyone is Steve or Alex. HybridAuth gives them one.
-
-- `/skin nick <name>` takes the skin of a licensed Mojang account (signed textures from the Mojang session server; no key needed).
-- `/skin url <link> [classic|slim]` makes a skin from a PNG link. The client only accepts textures from Mojang domains, so the link is sent to [MineSkin](https://mineskin.org), which uploads the skin to a Mojang account and returns signed textures. This needs a MineSkin API key in `[skins] mineskinApiKey` (https://account.mineskin.org/keys). The link and the image go to MineSkin; skins are created `unlisted`. Without a key `/skin url` says it is not configured and `/skin nick` still works.
-- The chosen skin is saved per UUID in `config/hybridauth/skins.json` (atomic writes, `.bak` copy of the previous file) and applied at every join before the player is announced to others. Changing it while online updates the skin for everyone nearby at once and re-sends the world state to the player (same packet sequence as a respawn that keeps all data).
-- `/hybridauth transfer` moves the skin together with the account; a failed transfer rolls it back.
-- Licensed players are not touched by default (they keep their Mojang skin). They may use `/skin` too, and `/skin reset` restores the skin Mojang gave them at login.
-- Limits: `cooldownSeconds` (1) between `nick`/`reset`, `urlCooldownSeconds` (1) between `url` requests, one request at a time per player, `urlAllowedDomains` (empty = any public site; `localhost`, IP addresses and internal names are always refused), `requestTimeoutSeconds` for MineSkin. Mojang answers are cached for 10 minutes.
-- Nothing is fetched automatically by nick: a cracked `ReMure` would otherwise get the skin of the licensed `ReMure`.
-- Messages are in `[skinMessages]`. Audit events: `SKIN_SET`, `SKIN_RESET`.
-
-The skin refresh packet sequence is adapted from [SkinRestorer](https://github.com/Suiranoil/SkinRestorer) (MIT, © Lionarius); see `THIRD_PARTY_NOTICES.md`.
-
-## Security notes
-
-- Passwords are hashed with PBKDF2-HmacSHA256 at **310,000 iterations**. Older records (e.g. 65,536 iterations) remain valid and are transparently re-hashed on the next successful login. Hashing runs on a separate thread pool, not on the server thread.
-- Rate limiting is two-level: identity (`uuid|name|ip`) locks after `maxLoginAttempts` failures, and a global per-name counter (3× the threshold) blocks brute-force attempts even when the attacker rotates IPs. The address of the last successful login for that name is exempt from the per-name lock, so an attacker cannot lock the owner out from the owner's own address. The identity lock still applies to it.
-- Failed attempts count for unregistered names too, so username probing is also throttled. `/recover` answers the same way for unregistered names and for wrong codes.
-- Login names are validated (`[A-Za-z0-9_]{3,16}`) in the login phase before any Mojang request, because the mod replaces the vanilla handshake.
-- Protocol order is enforced: a hello or key packet received in the wrong login state disconnects the client.
-- Duplicate logins: vanilla kicks the online session with the same UUID before the login completes. A cracked newcomer from a different address is rejected while an authenticated session is online. The newcomer is not allowed to kick it. A reconnect from the same address still replaces the stale session, and a Mojang-verified premium login is never rejected this way.
-- Audit log (`config/hybridauth/logs/auth.log`) rotates by size (5 MB) and keeps up to 5 archives.
-- IP sessions: the session lifetime is counted from the last password or license login (`sessionDurationMinutes`, default 720). Using the session does not extend it. The session is bound to the IP. On shared NATs or mobile carriers, anyone on the same IP can resume the session until it expires. Set `enableIpSession = false` if that matters for your players.
-- `/hybridauth unregister` and `/hybridauth info` match the exact nick only. If the nick is not found but a case variant exists, the command reports it. `unregister` aborts if the backup cannot be created.
-
-## Account transfer
-
-`/hybridauth transfer <old> <new>` moves a cracked account to a new nick. Use it to free a nick that a licensed owner now holds, for example when support resolves a cracked record on a nick that was later claimed on Mojang. The command first shows a preview. `confirm` runs the transfer.
-
-Both players must be offline. The old account must be a cracked account. The new nick must be valid, must not be licensed on Mojang (if Mojang cannot be reached, the transfer is refused), and must not already have an account, world data, or a whitelist/op/ban conflict.
-
-What is moved:
-
-- **Auth record**: the password hash, recovery code hash, and login dates, under the new UUID.
-- **World data**: `playerdata/<uuid>.dat` (the `UUID` field is rewritten), `.dat_old`, `stats/<uuid>.json`, `advancements/<uuid>.json`. This includes inventory, position, experience, and mod attachments stored in the player file.
-- **Whitelist, ops (with level), and ban list entries**.
-- **Data of other mods**: handled through `com.hybridauth.api.AccountTransfers` (see below). HybridAuth does not know these files.
-
-Safety: before any change, the affected files and lists are copied to `config/hybridauth/backups/transfer-<timestamp>-<old>-to-<new>/`, and `players.json` gets a backup as well. If any step fails, the completed steps are rolled back in reverse order. The backup stays on disk.
-
-### Handlers for other mods
+Реестр `AccountTransfers` — вторая точка расширения: другие моды подключают сюда перенос своих данных при смене ника.
 
 ```java
 AccountTransfers.register(new AccountTransferHandler() {
     public String name() { return "SMPIdentity"; }
     public Runnable transfer(AccountTransferPlan plan) throws Exception {
-        // move this mod's data keyed by plan.fromId() to plan.toId()
-        return () -> { /* undo: restore the old keys */ };
+        // перенести данные этого мода с plan.fromId() на plan.toId()
+        return () -> { /* откат: вернуть прежние ключи */ };
     }
 });
 ```
 
-The handler runs on the server thread with both accounts offline. It must either finish or throw without leaving changes behind, and it returns a `Runnable` that undoes its work. If a later step fails, that `Runnable` is called.
+Обработчик выполняется на потоке сервера, когда оба аккаунта вне сервера. Он должен либо завершиться полностью, либо бросить исключение, не оставив изменений. Возвращаемый `Runnable` отменяет сделанное: его вызывают, если сорвётся один из следующих шагов.
 
-## Commands and API
+Для скинов нужны три миксина: `PlayerList.placeNewPlayer`, а также аксессоры `ChunkMap` и `ChunkMap$TrackedEntity`. Порядок пакетов обновления скина на лету адаптирован из [SkinRestorer](https://github.com/Suiranoil/SkinRestorer) (лицензия MIT, © Lionarius), подробности и текст лицензии в [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
 
-The public HybridAuth API exposes identity resolution and server-thread whitelist operations to the Discord companion. HybridAuth has no dependency on Discord or JDA; if the Discord bot is disabled, Minecraft authentication is unaffected.
+---
 
-The `AccountTransfers` registry is a second extension point for other mods (see [Account transfer](#account-transfer)).
+## 📜 История изменений
 
-## Changelog 2.0.0
+### 2.0.0 — скины
 
-- **New: skins for cracked players.** `/skin nick`, `/skin url`, `/skin reset`, `/skin info`, admin `/hybridauth skin`. Skins are stored in `skins.json`, applied at join and refreshed live, and move with `/hybridauth transfer`. See [Skins](#skins).
-- New config sections `[skins]` and `[skinMessages]`. `/skin url` stays off until `mineskinApiKey` is set.
-- Three new mixins (`PlayerList.placeNewPlayer`, `ChunkMap` and `ChunkMap$TrackedEntity` accessors).
-- The transfer preview shows the skin line; the transfer backup includes `skins.json`.
-- **Fix**: the "your nick is licensed, automatic login" notice was sent twice on a premium login; now once. The licensed-nick message calls the account "пиратка" and uses the red/yellow colours again.
+- **Новое: скины для пиратов.** `/skin <ник>`, `/skin url`, `/skin model`, `/skin reset`, `/skin info`, `/skin help`, админская ветка `/hybridauth skin`. Выбор хранится в `skins.json`, применяется при входе, меняется на лету и переезжает с аккаунтом при `/hybridauth transfer`.
+- Выбор модели рук: слово `slim` или `classic` в команде, затем кнопки в чате и `/skin model`.
+- Новые разделы конфига `[skins]` и `[skinMessages]`. `/skin url` не работает, пока не задан `mineskinApiKey`.
+- Предпросмотр переноса показывает строку про скин, бэкап переноса включает `skins.json`.
+- **Исправлено:** подтверждение «ник лицензионный, вход выполнен автоматически» приходило дважды при лицензионном входе, теперь один раз. Сообщение о занятом лицензионном нике снова красно-жёлтое, слово «пиратка» вместо «кракнутый аккаунт».
+- Журнал, ошибки и комментарии конфига переведены на русский. Документация переписана.
 
-## Changelog 1.3.1
+### 1.3.1
 
-- **Fix**: kick and chat messages no longer show a stray glyph where a line break was in the config (CR/LF characters are now stripped; line breaks become spaces).
+- **Исправлено:** в сообщениях об отключении и в чате больше нет значка на месте переноса строки из конфига (символы CR и LF убираются, переносы заменяются пробелом).
 
-## Changelog 1.3.0
+### 1.3.0
 
-- **Security**: duplicate logins by nick are rejected when the online session is authenticated and comes from another address (`duplicateLogin`). Previously vanilla kicked it before HybridAuth could check anything.
-- **Security**: a cracked record on a nick that is licensed on Mojang no longer lets the licensed owner in. The owner gets the `licensedNameOccupied` prompt and timeout message. Before, the owner was routed into the cracked record without a Mojang check. The cracked owner keeps logging in with the password until the account is moved.
-- **New**: `/hybridauth transfer <old> <new> [confirm]` moves a cracked account (auth record, world data, whitelist, ops, bans) to a new nick, with a preview, backups, and rollback. The `AccountTransfers` API lets other mods move their data too.
-- **Security**: IP sessions no longer extend on use (absolute lifetime).
-- **Security**: the per-name lock no longer blocks the last successful login address.
-- **Security**: `/recover` throttles unknown nicks. Protocol state is checked in the login mixins.
-- **Fixes**: whitelist repair matches the nick exactly (case variants are kept). Admin `info`/`unregister` no longer fall back to case-insensitive matches. `unregister` aborts without a backup. Password hashing runs off the server thread. A second password operation for the same player is refused while one is pending (`passwordCheckPending`).
-- **New**: `WhitelistGateway.AddOutcome.warning` and `IdentityResolver.licensedNickWarning` warn when a cracked nick matches a licensed account.
+- **Безопасность:** дубль входа по нику отклоняется, если онлайн-сессия авторизована и пришла с другого адреса (`duplicateLogin`). Раньше ванилла выгоняла её раньше, чем HybridAuth успевал проверить.
+- **Безопасность:** пиратская запись на лицензионном нике больше не пускает владельца лицензии. Он получает сообщение `licensedNameOccupied` на экране входа и при таймауте. Раньше его направляли в пиратскую запись без проверки Mojang. Пират продолжает входить по паролю, пока аккаунт не перенесён.
+- **Новое:** `/hybridauth transfer <старый> <новый> [confirm]` переносит пиратский аккаунт (запись авторизации, данные мира, whitelist, op, баны) на новый ник с предпросмотром, бэкапами и откатом. API `AccountTransfers` позволяет другим модам переносить свои данные.
+- **Безопасность:** IP-сессии не продлеваются при использовании (абсолютный срок жизни).
+- **Безопасность:** блокировка по нику не действует на адрес последнего успешного входа.
+- **Безопасность:** `/recover` тормозит неизвестные ники, состояние протокола проверяется в миксинах входа.
+- **Исправления:** восстановление whitelist сравнивает ник точно, регистры не склеиваются. Админские `info` и `unregister` больше не ищут без учёта регистра. `unregister` прерывается без бэкапа. Хеширование паролей вынесено из потока сервера. Вторая операция с паролем у одного игрока отклоняется, пока идёт первая (`passwordCheckPending`).
+- **Новое:** `WhitelistGateway.AddOutcome.warning` и `IdentityResolver.licensedNickWarning` предупреждают, если пиратский ник совпадает с лицензионным.
 
-## Changelog 1.2.0
+### 1.2.0
 
-- **New**: always-visible license-nick notifications (chat + title) for premium logins and for cracked players holding a licensed nickname.
-- **New**: `/changepassword`, admin commands `info`, `unregister`, `list`, `status`.
-- **New**: audit log rotation; all player-facing messages moved to config (no hardcoded English strings left).
-- **Security**: username validation in the replaced login handshake; `/login` no longer kicks already-authenticated players after exhausted attempts; PBKDF2 work factor raised to 310k with transparent rehash-on-login; per-name rate limiting defeats IP rotation; unregistered-name attempts are throttled.
-- **Fixes**: `/hybridauth reload` now applies Mojang timeout/cache settings; thread-safety (volatile state in the login mixin, null-safe server callbacks); removed dead config (`hideUnauthenticated`, `storageType`) and dead code.
+- **Новое:** постоянно видимые уведомления о статусе ника (чат и титул) для лицензионных входов и для пиратов с лицензионным ником.
+- **Новое:** `/changepassword`, админские `info`, `unregister`, `list`, `status`.
+- **Новое:** ротация журнала аудита, все сообщения для игроков вынесены в конфиг.
+- **Безопасность:** проверка ника в заменённом рукопожатии, `/login` больше не отключает уже авторизованных после исчерпания попыток, PBKDF2 поднят до 310 000 итераций с перехешированием при входе, лимит по нику против смены IP, тормоз для незарегистрированных ников.
+- **Исправления:** `/hybridauth reload` применяет таймаут и кэш Mojang, потокобезопасность (volatile в миксине входа, безопасные вызовы сервера), удалены мёртвые настройки (`hideUnauthenticated`, `storageType`) и мёртвый код.

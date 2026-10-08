@@ -202,7 +202,7 @@ public class AuthManager {
             LicenseNotifier.notifyPremiumVerified(player);
         }
 
-        LOGGER.info("[HybridAuth] Player {} ({}) authenticated.", username, data.getType());
+        LOGGER.info("[HybridAuth] Игрок {} ({}) авторизован.", username, data.getType());
     }
 
     public void audit(ServerPlayer player, String event, String details) {

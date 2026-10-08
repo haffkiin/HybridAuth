@@ -121,7 +121,7 @@ public class MojangApiClient {
                     }
                 })
                 .exceptionally(error -> {
-                    LOGGER.error("[HybridAuth] Mojang API request failed for {}", username, error);
+                    LOGGER.error("[HybridAuth] Запрос к API Mojang для {} не удался", username, error);
                     return PremiumLookupResult.apiUnavailable();
                 });
     }

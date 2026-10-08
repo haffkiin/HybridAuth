@@ -66,14 +66,14 @@ public class JsonPlayerStorage implements PlayerStorage {
 
     private void loadOrRecover() {
         if (!Files.exists(filePath)) {
-            LOGGER.info("[HybridAuth] players.json does not exist; starting with an empty database.");
+            LOGGER.info("[HybridAuth] players.json не найден, начинаю с пустой базы.");
             return;
         }
         try {
             players.putAll(readPlayers(filePath));
-            LOGGER.info("[HybridAuth] Loaded {} records from players.json", players.size());
+            LOGGER.info("[HybridAuth] Загружено записей из players.json: {}", players.size());
         } catch (Exception primaryError) {
-            LOGGER.error("[HybridAuth] players.json is invalid; trying rolling backups.", primaryError);
+            LOGGER.error("[HybridAuth] players.json повреждён, пробую ротационные бэкапы.", primaryError);
             recoverFromBackup(primaryError);
         }
     }
@@ -87,14 +87,14 @@ public class JsonPlayerStorage implements PlayerStorage {
                 UUID uuid = UUID.fromString(entry.getKey());
                 PlayerData data = gson.fromJson(entry.getValue(), PlayerData.class);
                 if (data == null || data.getUsername() == null || data.getType() == null) {
-                    throw new IOException("Invalid player entry " + entry.getKey());
+                    throw new IOException("Некорректная запись игрока " + entry.getKey());
                 }
                 data.setUuid(uuid);
                 loaded.put(uuid, data);
             }
             return loaded;
         } catch (RuntimeException exception) {
-            throw new IOException("Invalid JSON in " + source, exception);
+            throw new IOException("Некорректный JSON в " + source, exception);
         }
     }
 
@@ -105,7 +105,7 @@ public class JsonPlayerStorage implements PlayerStorage {
             backups = listBackups(backupDirectory);
         } catch (IOException exception) {
             primaryError.addSuppressed(exception);
-            throw new IllegalStateException("Authentication data is corrupt and backups cannot be read", primaryError);
+            throw new IllegalStateException("Данные авторизации повреждены, бэкапы прочитать не удалось", primaryError);
         }
 
         for (int i = backups.size() - 1; i >= 0; i--) {
@@ -118,13 +118,13 @@ public class JsonPlayerStorage implements PlayerStorage {
                 atomicReplace(temporary, filePath);
                 players.clear();
                 players.putAll(recovered);
-                LOGGER.warn("[HybridAuth] Recovered players.json from {}", backup);
+                LOGGER.warn("[HybridAuth] players.json восстановлен из {}", backup);
                 return;
             } catch (Exception exception) {
-                LOGGER.warn("[HybridAuth] Backup {} is not usable: {}", backup, exception.getMessage());
+                LOGGER.warn("[HybridAuth] Бэкап {} непригоден: {}", backup, exception.getMessage());
             }
         }
-        throw new IllegalStateException("Authentication data is corrupt and no valid backup exists", primaryError);
+        throw new IllegalStateException("Данные авторизации повреждены, рабочего бэкапа нет", primaryError);
     }
 
     private void preserveCorruptPrimary() throws IOException {
@@ -195,13 +195,13 @@ public class JsonPlayerStorage implements PlayerStorage {
             while (writtenVersion < target) {
                 long remaining = deadline - System.currentTimeMillis();
                 if (remaining <= 0) {
-                    throw new IllegalStateException("Timed out while flushing players.json");
+                    throw new IllegalStateException("Время ожидания записи players.json истекло");
                 }
                 try {
                     stateLock.wait(remaining);
                 } catch (InterruptedException exception) {
                     Thread.currentThread().interrupt();
-                    throw new IllegalStateException("Interrupted while flushing players.json", exception);
+                    throw new IllegalStateException("Запись players.json прервана", exception);
                 }
             }
         }
@@ -210,7 +210,7 @@ public class JsonPlayerStorage implements PlayerStorage {
     private long enqueueSnapshot() {
         String snapshot = createSnapshot();
         synchronized (stateLock) {
-            if (closed) throw new IllegalStateException("Authentication storage is closed");
+            if (closed) throw new IllegalStateException("Хранилище авторизации закрыто");
             pendingSnapshot = snapshot;
             long version = ++requestedVersion;
             if (!drainScheduled) {
@@ -260,7 +260,7 @@ public class JsonPlayerStorage implements PlayerStorage {
                     }
                 }
             } catch (IOException exception) {
-                LOGGER.error("[HybridAuth] Failed to write players.json; retrying.", exception);
+                LOGGER.error("[HybridAuth] Не удалось записать players.json, повторяю попытку.", exception);
                 synchronized (stateLock) {
                     if (pendingSnapshot == null) pendingSnapshot = snapshot;
                     drainScheduled = true;
@@ -275,7 +275,7 @@ public class JsonPlayerStorage implements PlayerStorage {
     private void writeSnapshot(String snapshot) throws IOException {
         Files.createDirectories(filePath.getParent());
         if (!startupBackupCreated && Files.exists(filePath)) {
-            if (!createBackupInternal()) throw new IOException("Could not create startup backup");
+            if (!createBackupInternal()) throw new IOException("Не удалось создать бэкап при запуске");
             startupBackupCreated = true;
         }
         Path temporary = filePath.resolveSibling("players.json.tmp");
@@ -289,7 +289,7 @@ public class JsonPlayerStorage implements PlayerStorage {
         try {
             return writer.submit(this::createBackupInternal).get(30, TimeUnit.SECONDS);
         } catch (Exception exception) {
-            LOGGER.error("[HybridAuth] Failed to create authentication backup.", exception);
+            LOGGER.error("[HybridAuth] Не удалось создать бэкап данных авторизации.", exception);
             return false;
         }
     }
@@ -303,10 +303,10 @@ public class JsonPlayerStorage implements PlayerStorage {
             Files.createDirectories(backupDirectory);
             Files.copy(filePath, backup, StandardCopyOption.REPLACE_EXISTING);
             removeOldBackups(backupDirectory);
-            LOGGER.info("[HybridAuth] Authentication backup created: {}", backup);
+            LOGGER.info("[HybridAuth] Бэкап данных авторизации создан: {}", backup);
             return true;
         } catch (IOException exception) {
-            LOGGER.error("[HybridAuth] Failed to create authentication backup.", exception);
+            LOGGER.error("[HybridAuth] Не удалось создать бэкап данных авторизации.", exception);
             return false;
         }
     }
