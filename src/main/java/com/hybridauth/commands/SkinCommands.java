@@ -40,10 +40,8 @@ public final class SkinCommands {
 
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
         dispatcher.register(Commands.literal("skin")
-                .executes(context -> {
-                    reply(context.getSource(), ModConfig.SERVER.msgSkinUsage.get());
-                    return 1;
-                })
+                .executes(context -> help(context.getSource()))
+                .then(Commands.literal("help").executes(context -> help(context.getSource())))
                 .then(Commands.literal("nick")
                         .then(Commands.argument("nick", StringArgumentType.word())
                                 .executes(context -> selfNick(context.getSource(),
@@ -81,6 +79,13 @@ public final class SkinCommands {
     }
 
     // ─── игрок ───────────────────────────────────────────────────────────────
+
+    private static int help(CommandSourceStack source) {
+        for (String line : ModConfig.SERVER.msgSkinHelp.get()) {
+            reply(source, line);
+        }
+        return 1;
+    }
 
     private static int selfNick(CommandSourceStack source, String nick) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
         ServerPlayer player = authenticatedPlayer(source);

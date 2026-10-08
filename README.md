@@ -52,6 +52,7 @@ Player commands (permission level 0):
 | `/skin url <link> [classic|slim]` | Make a skin from a PNG link (needs a MineSkin key, see [Skins](#skins)) |
 | `/skin reset` | Drop the chosen skin (licensed players get their Mojang skin back) |
 | `/skin info` | Show the chosen skin |
+| `/skin help` | In-game instructions (also shown by `/skin`); the text is the `[skinMessages] help` list |
 
 Admin commands (permission level 3):
 

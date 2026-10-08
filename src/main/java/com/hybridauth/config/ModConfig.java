@@ -53,7 +53,7 @@ public class ModConfig {
         public final ModConfigSpec.IntValue skinsRequestTimeoutSeconds;
 
         // Skin messages
-        public final ModConfigSpec.ConfigValue<String> msgSkinUsage;
+        public final ModConfigSpec.ConfigValue<List<? extends String>> msgSkinHelp;
         public final ModConfigSpec.ConfigValue<String> msgSkinDisabled;
         public final ModConfigSpec.ConfigValue<String> msgSkinFetching;
         public final ModConfigSpec.ConfigValue<String> msgSkinSet;
@@ -172,7 +172,14 @@ public class ModConfig {
             builder.pop();
 
             builder.push("skinMessages");
-            msgSkinUsage = builder.define("usage", "§eСкин: §6/skin nick <ник> §7(скин лицензионного аккаунта)§e, §6/skin url <ссылка> [classic|slim]§e, §6/skin reset§e, §6/skin info");
+            msgSkinHelp = builder.comment("Shown by /skin and /skin help, one chat line per entry")
+                    .defineListAllowEmpty("help", List.of(
+                            "§6§lСкины",
+                            "§e/skin <ник> §7— скин любого лицензионного игрока (ники можно смотреть на namemc.com).",
+                            "§e/skin url <ссылка> §7— свой скин из картинки PNG 64×64. Для тонких рук добавьте в конце §eslim§7.",
+                            "§7Как получить ссылку: загрузите файл скина на §fimgur.com§7 или §fpostimages.org§7, либо отправьте его в Discord, и скопируйте ссылку на картинку. Ссылка должна вести прямо на PNG-файл.",
+                            "§e/skin reset §7— убрать скин, §e/skin info §7— что выбрано. Между сменами есть небольшая пауза."),
+                            () -> "", value -> value instanceof String);
             msgSkinDisabled = builder.define("disabled", "§cСмена скинов на сервере отключена.");
             msgSkinFetching = builder.define("fetching", "§7Загружаю скин…");
             msgSkinSet = builder.define("set", "§aСкин установлен: %source%. Он сохранится при следующих входах.");
@@ -182,7 +189,7 @@ public class ModConfig {
             msgSkinNone = builder.define("none", "§7Свой скин не выбран.");
             msgSkinNickNotFound = builder.define("nickNotFound", "§cЛицензионный аккаунт с ником %nick% не найден или у него нет скина.");
             msgSkinUrlUnavailable = builder.define("urlUnavailable", "§cСкин по ссылке на этом сервере не настроен. Используйте §6/skin nick <ник>§c.");
-            msgSkinUrlInvalid = builder.define("urlInvalid", "§cНекорректная ссылка. Нужна прямая ссылка http(s) на PNG-картинку скина.");
+            msgSkinUrlInvalid = builder.define("urlInvalid", "§cНекорректная ссылка. Нужна прямая ссылка http(s) на PNG-картинку скина. Подробнее: §6/skin help");
             msgSkinUrlDomain = builder.define("urlDomain", "§cС этого сайта скины не принимаются.");
             msgSkinCooldown = builder.define("cooldown", "§eПодождите %seconds% с. перед следующей сменой скина.");
             msgSkinBusy = builder.define("busy", "§eЗапрос скина уже выполняется, подождите.");
