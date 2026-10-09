@@ -19,6 +19,8 @@ import com.hybridauth.skin.SkinService;
 import com.hybridauth.skin.SkinStorage;
 import com.hybridauth.storage.JsonPlayerStorage;
 import com.hybridauth.storage.PlayerStorage;
+import com.hybridauth.transfer.OwnerRedirects;
+import com.hybridauth.transfer.PetOwnership;
 import com.hybridauth.whitelist.WhitelistGatewayImpl;
 import com.hybridauth.whitelist.WhitelistRepairService;
 import net.neoforged.bus.api.IEventBus;
@@ -46,6 +48,7 @@ public class HybridAuthMod {
     private static AuthManager authManager;
     private static MojangApiClient mojangClient;
     private static SkinService skinService;
+    private static PetOwnership petOwnership;
     private static String modVersion = "dev";
     private static final PremiumSpawnProtection PREMIUM_SPAWN_PROTECTION = new PremiumSpawnProtection();
     private static final ClaimRegistry CLAIM_REGISTRY = new ClaimRegistry();
@@ -77,6 +80,8 @@ public class HybridAuthMod {
         AuthAuditLogger auditLogger = new AuthAuditLogger(FMLPaths.CONFIGDIR.get());
         
         authManager = new AuthManager(storage, sessionManager, auditLogger);
+        petOwnership = new PetOwnership(new OwnerRedirects(
+                FMLPaths.CONFIGDIR.get().resolve("hybridauth").resolve("pet_owner_redirects.json")));
         skinService = new SkinService(
                 new SkinStorage(FMLPaths.CONFIGDIR.get().resolve("hybridauth")),
                 mojangClient,
@@ -136,6 +141,10 @@ public class HybridAuthMod {
 
     public static SkinService getSkinService() {
         return skinService;
+    }
+
+    public static PetOwnership getPetOwnership() {
+        return petOwnership;
     }
 
     /** Применяет настройки скинов из конфига (при старте и по /hybridauth reload). */

@@ -12,6 +12,7 @@ import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.common.util.TriState;
 import net.neoforged.neoforge.event.CommandEvent;
 import net.neoforged.neoforge.event.ServerChatEvent;
+import net.neoforged.neoforge.event.entity.EntityJoinLevelEvent;
 import net.neoforged.neoforge.event.entity.item.ItemTossEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
 import net.neoforged.neoforge.event.entity.living.LivingIncomingDamageEvent;
@@ -63,6 +64,14 @@ public class AuthEventHandler {
             } else {
                 authLocks.remove(player.getUUID());
             }
+        }
+    }
+
+    /** Питомцы переехавшего аккаунта получают нового владельца в момент загрузки в мир. */
+    @SubscribeEvent
+    public void onEntityJoinLevel(EntityJoinLevelEvent event) {
+        if (HybridAuthMod.getPetOwnership() != null) {
+            HybridAuthMod.getPetOwnership().applyOnLoad(event.getEntity());
         }
     }
 

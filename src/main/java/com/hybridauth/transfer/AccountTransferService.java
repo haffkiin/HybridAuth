@@ -195,6 +195,7 @@ public final class AccountTransferService {
         lines.add("Операторы: " + (op != null ? "уровень " + op.getLevel() + ", будет перенесён" : "нет"));
         lines.add("Бан-лист: " + (ban != null ? "будет перенесён" : "нет"));
         List<String> handlers = handlerNames();
+        lines.add("Питомцы: владелец сменится у загруженных сейчас и у остальных при загрузке чанка");
         lines.add("Обработчики других модов: " + (handlers.isEmpty() ? "нет" : String.join(", ", handlers)));
         lines.add("Для выполнения: /hybridauth transfer " + fromName + " " + toName + " confirm");
         return lines;
@@ -262,6 +263,11 @@ public final class AccountTransferService {
                 undo.push(handlerUndo::run);
                 applied.add(handler.name());
             }
+
+            // 5a. Питомцы: владелец меняется у загруженных сейчас, у остальных при загрузке чанка
+            PetOwnership.Moved pets = HybridAuthMod.getPetOwnership().move(server, fromId, toId);
+            undo.push(pets.undo()::run);
+            applied.add("питомцы, сразу: " + pets.loadedNow());
 
             storage.flush();
             authManager.audit(auditEvent, fromName, fromId, "-",
