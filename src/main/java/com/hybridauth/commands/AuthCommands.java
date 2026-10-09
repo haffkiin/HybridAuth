@@ -96,6 +96,7 @@ public class AuthCommands {
                                         StringArgumentType.getString(context, "username")))))
                 .then(AccountTransferCommands.build())
                 .then(SkinCommands.buildAdmin())
+                .then(ClaimCommands.buildAdmin())
                 .then(Commands.literal("list").executes(context -> handleAdminList(context.getSource())))
                 .then(Commands.literal("status").executes(context -> handleAdminStatus(context.getSource()))));
     }

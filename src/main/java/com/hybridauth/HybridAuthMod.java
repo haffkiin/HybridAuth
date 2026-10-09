@@ -6,7 +6,9 @@ import com.hybridauth.auth.MojangApiClient;
 import com.hybridauth.api.HybridAuthApi;
 import com.hybridauth.auth.SessionManager;
 import com.hybridauth.audit.AuthAuditLogger;
+import com.hybridauth.claim.ClaimRegistry;
 import com.hybridauth.commands.AuthCommands;
+import com.hybridauth.commands.ClaimCommands;
 import com.hybridauth.commands.SkinCommands;
 import com.hybridauth.config.ModConfig;
 import com.hybridauth.events.AuthEventHandler;
@@ -46,6 +48,7 @@ public class HybridAuthMod {
     private static SkinService skinService;
     private static String modVersion = "dev";
     private static final PremiumSpawnProtection PREMIUM_SPAWN_PROTECTION = new PremiumSpawnProtection();
+    private static final ClaimRegistry CLAIM_REGISTRY = new ClaimRegistry();
     
     public HybridAuthMod(IEventBus modEventBus, ModContainer modContainer) {
         modVersion = modContainer.getModInfo().getVersion().toString();
@@ -120,6 +123,7 @@ public class HybridAuthMod {
     private void onRegisterCommands(RegisterCommandsEvent event) {
         AuthCommands.register(event.getDispatcher());
         SkinCommands.register(event.getDispatcher());
+        ClaimCommands.register(event.getDispatcher());
     }
 
     public static AuthManager getAuthManager() {
@@ -147,6 +151,10 @@ public class HybridAuthMod {
 
     public static PremiumSpawnProtection getPremiumSpawnProtection() {
         return PREMIUM_SPAWN_PROTECTION;
+    }
+
+    public static ClaimRegistry getClaimRegistry() {
+        return CLAIM_REGISTRY;
     }
 
     public static Logger getLogger() {

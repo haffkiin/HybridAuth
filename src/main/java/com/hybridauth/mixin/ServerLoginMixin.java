@@ -7,6 +7,7 @@ import com.hybridauth.auth.LicensedNameRules;
 import com.hybridauth.auth.MinecraftNames;
 import com.hybridauth.auth.OfflineUuid;
 import com.hybridauth.auth.PremiumLookupResult;
+import com.hybridauth.claim.ClaimService;
 import com.hybridauth.config.ModConfig;
 import com.hybridauth.storage.PlayerData;
 import com.mojang.authlib.GameProfile;
@@ -158,9 +159,15 @@ public abstract class ServerLoginMixin {
             // Кракнутая запись с точным ником входит по паролю, как и раньше. Если ник при этом
             // лицензионный, владелец лицензии войти не сможет: AuthEventHandler и AuthManager покажут
             // ему сообщение о техподдержке. Кракнутый владелец продолжает играть до переноса.
-            HybridAuthMod.getAuthManager().setLicensedNameConflict(
-                    exactCracked.getUuid(),
-                    LicensedNameRules.isLicensedExactConflict(username, result.status(), result.canonicalName()));
+            boolean licensedConflict = LicensedNameRules.isLicensedExactConflict(
+                    username, result.status(), result.canonicalName());
+            if (licensedConflict && ClaimService.shouldVerifyLicense(server, exactCracked, result)) {
+                // Заявка /claim: вместо пароля проверяем лицензию, перенос выполнится после hasJoined
+                HybridAuthMod.getAuthManager().setLicensedNameConflict(exactCracked.getUuid(), false);
+                sendEncryptionRequest(server);
+                return;
+            }
+            HybridAuthMod.getAuthManager().setLicensedNameConflict(exactCracked.getUuid(), licensedConflict);
             startClientVerification(new GameProfile(exactCracked.getUuid(), username));
             return;
         }
@@ -325,8 +332,17 @@ public abstract class ServerLoginMixin {
 
         GameProfile profile = profileOpt.get();
 
+        // Заявка /claim: данные пиратского аккаунта переезжают на лицензионный до входа в мир
+        MinecraftServer claimServer = HybridAuthMod.getServer();
+        String claimFailure = claimServer == null ? null : ClaimService.completeIfPending(claimServer, profile);
+        if (claimFailure != null) {
+            disconnect(Component.literal(colorize(
+                    ModConfig.SERVER.msgClaimFailed.get().replace("%reason%", claimFailure))));
+            return;
+        }
+
         // Лицензионный игрок — сохраняем как PREMIUM и пускаем
-        // (ник с кракнутой записью сюда не попадает: см. onPremiumLookup)
+        // (ник с кракнутой записью сюда попадает только по заявке /claim: см. onPremiumLookup)
         HybridAuthMod.getLogger().info("[HybridAuth] Лицензионный игрок {} прошёл проверку.", username);
 
         PlayerData data = authManager.getStorage()

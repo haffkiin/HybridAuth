@@ -45,6 +45,17 @@ public class ModConfig {
         public final ModConfigSpec.IntValue registrationsGlobalPer10Min;
         public final ModConfigSpec.IntValue warnAccountsPerIp;
 
+        // Claim (перенос пиратки на лицензию)
+        public final ModConfigSpec.BooleanValue claimEnabled;
+        public final ModConfigSpec.IntValue claimMinutes;
+        public final ModConfigSpec.ConfigValue<String> msgClaimDisabled;
+        public final ModConfigSpec.ConfigValue<String> msgClaimOnlyCracked;
+        public final ModConfigSpec.ConfigValue<String> msgClaimNotLicensed;
+        public final ModConfigSpec.ConfigValue<String> msgClaimExplain;
+        public final ModConfigSpec.ConfigValue<String> msgClaimCreated;
+        public final ModConfigSpec.ConfigValue<String> msgClaimDone;
+        public final ModConfigSpec.ConfigValue<String> msgClaimFailed;
+
         // Skins
         public final ModConfigSpec.BooleanValue skinsEnabled;
         public final ModConfigSpec.BooleanValue skinsNickEnabled;
@@ -166,6 +177,20 @@ public class ModConfig {
                     .defineInRange("registrationsGlobalPer10Min", 40, 0, 10000);
             warnAccountsPerIp = builder.comment("Предупредить администраторов в чате и в журнале аудита, когда с одного IP набирается столько пиратских аккаунтов. Игрока это не блокирует. (0 — не предупреждать)")
                     .defineInRange("warnAccountsPerIp", 5, 0, 1000);
+            builder.pop();
+
+            builder.push("claim");
+            claimEnabled = builder.comment("Разрешить команду /claim: пират, купивший лицензию на свой ник, переносит все данные на лицензионный аккаунт")
+                    .define("enabled", true);
+            claimMinutes = builder.comment("Сколько минут после /claim confirm действует заявка: за это время нужно зайти с лицензионного клиента")
+                    .defineInRange("claimMinutes", 10, 1, 120);
+            msgClaimDisabled = builder.define("disabled", "§cПеренос на лицензию на этом сервере отключён.");
+            msgClaimOnlyCracked = builder.define("onlyCracked", "§cПеренос на лицензию нужен только пиратским аккаунтам с паролем.");
+            msgClaimNotLicensed = builder.define("notLicensed", "§cНик %nick% не зарегистрирован в Mojang как лицензионный, переносить пока нечего. Сначала купите лицензию на этот ник.");
+            msgClaimExplain = builder.define("explain", "§6Перенос на лицензию. §eВсе данные аккаунта %nick% (вещи, прогресс, whitelist, скин) переедут на ваш лицензионный аккаунт. Чтобы подтвердить, введите §6/claim confirm§e: вас отключит, а затем в течение %minutes% мин. зайдите с лицензионного клиента под ником §f%nick%§e.");
+            msgClaimCreated = builder.define("created", "§aЗаявка принята. Зайдите в течение %minutes% мин. с лицензионного клиента под ником %nick%: данные перенесутся автоматически. Пока заявка действует, на этот ник может не пускать с пиратского клиента.");
+            msgClaimDone = builder.define("done", "§aДанные вашего пиратского аккаунта перенесены на лицензионный. Пароль больше не нужен, добро пожаловать!");
+            msgClaimFailed = builder.define("failed", "§cНе удалось перенести данные на лицензию: %reason% Ничего не потеряно, обратитесь в техподдержку.");
             builder.pop();
 
             builder.push("skins");

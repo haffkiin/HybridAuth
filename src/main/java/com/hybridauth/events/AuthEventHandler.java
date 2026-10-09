@@ -55,6 +55,8 @@ public class AuthEventHandler {
                 HybridAuthMod.getPremiumSpawnProtection().clear(player);
             }
             LicenseNotifier.onPlayerJoin(player);
+            HybridAuthMod.getClaimRegistry().takeNotice(player.getUUID())
+                    .ifPresent(notice -> player.sendSystemMessage(Component.literal(colorize(notice))));
             if (needsAuthProtection(player)) {
                 authLocks.put(player.getUUID(), AuthLock.capture(player));
                 protectUnauthenticatedPlayer(player);
