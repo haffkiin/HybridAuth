@@ -65,6 +65,8 @@ public class ModConfig {
         public final ModConfigSpec.IntValue skinsCooldownSeconds;
         public final ModConfigSpec.IntValue skinsUrlCooldownSeconds;
         public final ModConfigSpec.IntValue skinsRequestTimeoutSeconds;
+        public final ModConfigSpec.ConfigValue<List<? extends String>> skinsGallery;
+        public final ModConfigSpec.ConfigValue<String> msgSkinGalleryTitle;
 
         // Skin messages
         public final ModConfigSpec.ConfigValue<List<? extends String>> msgSkinHelp;
@@ -213,6 +215,10 @@ public class ModConfig {
                     .defineInRange("urlCooldownSeconds", 1, 0, 86400);
             skinsRequestTimeoutSeconds = builder.comment("Сколько ждать создания скина в MineSkin, секунд")
                     .defineInRange("requestTimeoutSeconds", 45, 10, 300);
+            skinsGallery = builder.comment("Ники лицензионных аккаунтов для меню /skin gallery (до 36 штук): у каждого в меню голова с его настоящим скином, по клику игрок получает такой же скин. Пустой список — меню отключено")
+                    .defineListAllowEmpty("gallery", List.of("jeb_", "Dinnerbone", "Notch", "Grumm", "Searge", "slicedlime"),
+                            () -> "", value -> value instanceof String);
+            msgSkinGalleryTitle = builder.comment("Название меню /skin gallery").define("galleryTitle", "§5Выбор скина");
             builder.pop();
 
             builder.push("skinMessages");

@@ -10,12 +10,17 @@ import net.minecraft.server.level.ServerPlayer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Скины игроков: получение из Mojang или по ссылке, хранение, применение к профилю.
@@ -38,6 +43,15 @@ public final class SkinService {
     private final Map<UUID, Long> lastRequestAt = new ConcurrentHashMap<>();
     private final Set<UUID> busy = ConcurrentHashMap.newKeySet();
 
+    /** Скины ников из галереи /skin gallery: загружаются заранее, чтобы в меню были головы с настоящими скинами. */
+    private final Map<String, SkinEntry> gallery = new ConcurrentHashMap<>();
+    private final Set<String> galleryLoading = ConcurrentHashMap.newKeySet();
+    private final ScheduledExecutorService galleryLoader = Executors.newSingleThreadScheduledExecutor(runnable -> {
+        Thread thread = new Thread(runnable, "HybridAuth-SkinGallery");
+        thread.setDaemon(true);
+        return thread;
+    });
+
     public SkinService(SkinStorage storage, MojangApiClient mojangApi, MojangSkinFetcher mojangSkins,
                        MineSkinClient mineSkin) {
         this.storage = storage;
@@ -56,6 +70,44 @@ public final class SkinService {
 
     public MojangSkinFetcher mojangSkins() {
         return mojangSkins;
+    }
+
+    // ─── галерея ─────────────────────────────────────────────────────────────
+
+    /**
+     * Загружает скины ников галереи в фоне, не чаще одного запроса в 400 мс, чтобы не упереться
+     * в лимиты Mojang. Уже загруженные и загружающиеся ники пропускаются.
+     */
+    public void prefetchGallery(List<? extends String> nicks) {
+        long delay = 0;
+        for (String nick : nicks) {
+            String key = nick.toLowerCase(Locale.ROOT);
+            if (gallery.containsKey(key) || !galleryLoading.add(key)) {
+                continue;
+            }
+            galleryLoader.schedule(() -> {
+                try {
+                    fetchByNick(nick).whenComplete((entry, failure) -> {
+                        galleryLoading.remove(key);
+                        if (entry != null) {
+                            gallery.put(key, entry);
+                        }
+                    });
+                } catch (RuntimeException e) {
+                    galleryLoading.remove(key);
+                }
+            }, delay, TimeUnit.MILLISECONDS);
+            delay += 400;
+        }
+    }
+
+    public Optional<SkinEntry> galleryEntry(String nick) {
+        return Optional.ofNullable(gallery.get(nick.toLowerCase(Locale.ROOT)));
+    }
+
+    public void shutdown() {
+        galleryLoader.shutdownNow();
+        mineSkin.shutdown();
     }
 
     // ─── вход и выход игрока ─────────────────────────────────────────────────

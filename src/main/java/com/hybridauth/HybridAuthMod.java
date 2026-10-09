@@ -115,7 +115,7 @@ public class HybridAuthMod {
             authManager.shutdown();
         }
         if (skinService != null) {
-            skinService.mineSkin().shutdown();
+            skinService.shutdown();
         }
         HybridAuthApi.clear();
     }
@@ -147,6 +147,9 @@ public class HybridAuthMod {
                 ModConfig.SERVER.skinsMineskinApiKey.get(),
                 ModConfig.SERVER.skinsRequestTimeoutSeconds.get());
         skinService.mojangSkins().setTimeoutMs(ModConfig.SERVER.mojangApiTimeoutMs.get());
+        if (ModConfig.SERVER.skinsEnabled.get()) {
+            skinService.prefetchGallery(ModConfig.SERVER.skinsGallery.get());
+        }
     }
 
     public static PremiumSpawnProtection getPremiumSpawnProtection() {
