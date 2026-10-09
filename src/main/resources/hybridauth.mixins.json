@@ -9,7 +9,8 @@
     "StoredUserEntryAccessor",
     "PlayerListMixin",
     "ChunkMapAccessor",
-    "TrackedEntityAccessor"
+    "TrackedEntityAccessor",
+    "GameProfileCacheMixin"
   ],
   "injectors": {
     "defaultRequire": 1
