@@ -60,7 +60,11 @@ public final class OwnerRedirects {
         String source = from.toString();
         String target = to.toString();
         redirects.replaceAll((ignored, destination) -> source.equals(destination) ? target : destination);
+        // Аккаунт, на который переехали, снова «живой»: цепочка через него дальше не идёт
+        redirects.remove(target);
         redirects.put(source, target);
+        // Перенос туда и обратно оставляет записи вида A → A, они не нужны
+        redirects.entrySet().removeIf(entry -> entry.getKey().equals(entry.getValue()));
         save();
     }
 

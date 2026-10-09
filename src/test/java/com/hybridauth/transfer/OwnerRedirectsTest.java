@@ -45,6 +45,18 @@ class OwnerRedirectsTest {
     }
 
     @Test
+    void moveThereAndBackLeavesOnlyTheReturnRedirect() {
+        OwnerRedirects redirects = new OwnerRedirects(dir.resolve("r.json"));
+        redirects.add(A, B);
+        redirects.add(B, A);
+        assertEquals(A, redirects.resolve(B));
+        assertEquals(A, redirects.resolve(A));
+        Map<String, String> snapshot = redirects.snapshot();
+        assertEquals(1, snapshot.size());
+        assertEquals(A.toString(), snapshot.get(B.toString()));
+    }
+
+    @Test
     void sameUuidIsIgnored() {
         OwnerRedirects redirects = new OwnerRedirects(dir.resolve("r.json"));
         redirects.add(A, A);
