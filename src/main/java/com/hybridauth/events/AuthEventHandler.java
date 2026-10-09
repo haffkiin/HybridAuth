@@ -12,6 +12,7 @@ import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.common.util.TriState;
 import net.neoforged.neoforge.event.CommandEvent;
 import net.neoforged.neoforge.event.ServerChatEvent;
+import net.neoforged.neoforge.event.entity.EntityJoinLevelEvent;
 import net.neoforged.neoforge.event.entity.item.ItemTossEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
 import net.neoforged.neoforge.event.entity.living.LivingIncomingDamageEvent;
@@ -37,6 +38,8 @@ public class AuthEventHandler {
 
     private final Map<UUID, Long> lastMessageTime = new ConcurrentHashMap<>();
     private final Map<UUID, AuthLock> authLocks = new ConcurrentHashMap<>();
+    /** Кому уже показали сообщение о занятом лицензионном нике: один раз за вход, а не при каждом напоминании. */
+    private final java.util.Set<UUID> conflictNoticeSent = ConcurrentHashMap.newKeySet();
 
     @SubscribeEvent
     public void onPlayerJoin(PlayerEvent.PlayerLoggedInEvent event) {
@@ -53,12 +56,22 @@ public class AuthEventHandler {
                 HybridAuthMod.getPremiumSpawnProtection().clear(player);
             }
             LicenseNotifier.onPlayerJoin(player);
+            HybridAuthMod.getClaimRegistry().takeNotice(player.getUUID())
+                    .ifPresent(notice -> player.sendSystemMessage(Component.literal(colorize(notice))));
             if (needsAuthProtection(player)) {
                 authLocks.put(player.getUUID(), AuthLock.capture(player));
                 protectUnauthenticatedPlayer(player);
             } else {
                 authLocks.remove(player.getUUID());
             }
+        }
+    }
+
+    /** Питомцы переехавшего аккаунта получают нового владельца в момент загрузки в мир. */
+    @SubscribeEvent
+    public void onEntityJoinLevel(EntityJoinLevelEvent event) {
+        if (HybridAuthMod.getPetOwnership() != null) {
+            HybridAuthMod.getPetOwnership().applyOnLoad(event.getEntity());
         }
     }
 
@@ -73,6 +86,7 @@ public class AuthEventHandler {
                 HybridAuthMod.getSkinService().onPlayerQuit(player);
             }
             lastMessageTime.remove(player.getUUID());
+            conflictNoticeSent.remove(player.getUUID());
             authLocks.remove(player.getUUID());
             HybridAuthMod.getPremiumSpawnProtection().clear(player);
         }
@@ -265,7 +279,7 @@ public class AuthEventHandler {
         boolean registered = authManager.getStorage().load(player.getUUID()).isPresent()
                 || authManager.getStorage().loadByExactUsername(player.getScoreboardName()).isPresent();
         String message = registered ? ModConfig.SERVER.msgLoginPrompt.get() : ModConfig.SERVER.msgRegisterPrompt.get();
-        if (authManager.isLicensedNameConflict(player.getUUID())) {
+        if (authManager.isLicensedNameConflict(player.getUUID()) && conflictNoticeSent.add(player.getUUID())) {
             message = message + "\n" + ModConfig.SERVER.msgLicensedNameOccupied.get();
         }
         player.sendSystemMessage(Component.literal(colorize(message)));

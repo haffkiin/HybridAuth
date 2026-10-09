@@ -67,7 +67,10 @@ public final class LicenseNotifier {
                 String message = result.canonicalName() != null && result.canonicalName().equals(username)
                         ? ModConfig.SERVER.msgLicensedNameOccupied.get()
                         : ModConfig.SERVER.msgCrackedPremiumNickWarning.get();
-                player.sendSystemMessage(Component.literal(colorize(message)));
+                // Сообщение о занятом нике в чат уже выводит напоминание о входе (один раз), здесь только экран
+                if (!ModConfig.SERVER.msgLicensedNameOccupied.get().equals(message)) {
+                    player.sendSystemMessage(Component.literal(colorize(message)));
+                }
                 player.connection.send(new ClientboundSetActionBarTextPacket(
                         Component.literal(colorize(message.replace("\n", " ")))));
             });

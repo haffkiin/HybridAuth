@@ -3,6 +3,7 @@ package com.hybridauth.commands;
 import com.hybridauth.HybridAuthMod;
 import com.hybridauth.auth.AuthManager;
 import com.hybridauth.config.ModConfig;
+import com.hybridauth.gui.SkinGallery;
 import com.hybridauth.skin.SkinEntry;
 import com.hybridauth.skin.SkinException;
 import com.hybridauth.skin.SkinRequestRules;
@@ -46,6 +47,7 @@ public final class SkinCommands {
         dispatcher.register(Commands.literal("skin")
                 .executes(context -> help(context.getSource()))
                 .then(Commands.literal("help").executes(context -> help(context.getSource())))
+                .then(Commands.literal("gallery").executes(context -> gallery(context.getSource())))
                 .then(Commands.literal("nick")
                         .then(Commands.argument("nick", StringArgumentType.word())
                                 .executes(context -> selfNick(context.getSource(),
@@ -92,6 +94,29 @@ public final class SkinCommands {
     }
 
     // ─── игрок ───────────────────────────────────────────────────────────────
+
+    private static int gallery(CommandSourceStack source) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        ServerPlayer player = authenticatedPlayer(source);
+        if (player == null) {
+            return 0;
+        }
+        SkinGallery.open(player);
+        return 1;
+    }
+
+    // Точки входа для меню галереи: те же проверки, паузы и сообщения, что у команд
+
+    public static void chooseNick(ServerPlayer player, String nick) {
+        requestNick(player.createCommandSourceStack(), player.getUUID(), nick, false);
+    }
+
+    public static void chooseModel(ServerPlayer player, String model) {
+        requestModel(player.createCommandSourceStack(), player.getUUID(), model, false);
+    }
+
+    public static void chooseReset(ServerPlayer player) {
+        requestReset(player.createCommandSourceStack(), player.getUUID(), false);
+    }
 
     private static int help(CommandSourceStack source) {
         for (String line : ModConfig.SERVER.msgSkinHelp.get()) {

@@ -2,7 +2,9 @@ package com.hybridauth.commands;
 
 import com.hybridauth.HybridAuthMod;
 import com.hybridauth.auth.AuthManager;
+import com.hybridauth.auth.IpAccountRules;
 import com.hybridauth.auth.PasswordHasher;
+import com.hybridauth.auth.RegistrationLimiter;
 import com.hybridauth.auth.RecoveryCodeGenerator;
 import com.hybridauth.config.ModConfig;
 import com.hybridauth.storage.PlayerData;
@@ -52,6 +54,8 @@ public class AuthCommands {
         registerLoginCommand(dispatcher, "l");
         registerRecoveryCommands(dispatcher);
         registerChangePasswordCommand(dispatcher);
+        registerLogoutCommand(dispatcher);
+        registerUnregisterCommand(dispatcher);
 
         dispatcher.register(Commands.literal("hybridauth")
                 .requires(source -> source.hasPermission(3))
@@ -92,6 +96,7 @@ public class AuthCommands {
                                         StringArgumentType.getString(context, "username")))))
                 .then(AccountTransferCommands.build())
                 .then(SkinCommands.buildAdmin())
+                .then(ClaimCommands.buildAdmin())
                 .then(Commands.literal("list").executes(context -> handleAdminList(context.getSource())))
                 .then(Commands.literal("status").executes(context -> handleAdminStatus(context.getSource()))));
     }
@@ -145,6 +150,132 @@ public class AuthCommands {
                                                 StringArgumentType.getString(context, "confirm")))))));
     }
 
+    private static void registerLogoutCommand(CommandDispatcher<CommandSourceStack> dispatcher) {
+        dispatcher.register(Commands.literal("logout")
+                .executes(context -> handleLogout(context.getSource().getPlayerOrException())));
+    }
+
+    private static void registerUnregisterCommand(CommandDispatcher<CommandSourceStack> dispatcher) {
+        dispatcher.register(Commands.literal("unregister")
+                .then(Commands.argument("password", StringArgumentType.string())
+                        .then(Commands.argument("confirm", StringArgumentType.string())
+                                .executes(context -> handleSelfUnregister(
+                                        context.getSource().getPlayerOrException(),
+                                        StringArgumentType.getString(context, "password"),
+                                        StringArgumentType.getString(context, "confirm"))))));
+    }
+
+    /** {@code /logout}: сбрасывает IP-сессию и отключает игрока, при следующем входе нужен пароль. */
+    private static int handleLogout(ServerPlayer player) {
+        AuthManager authManager = HybridAuthMod.getAuthManager();
+        if (!authManager.isAuthenticated(player.getUUID())) {
+            player.sendSystemMessage(Component.literal(colorize(ModConfig.SERVER.msgLoginRequired.get())));
+            return 0;
+        }
+        PlayerData data = findPlayerData(authManager, player);
+        if (data == null || data.isPremium()) {
+            player.sendSystemMessage(Component.literal(colorize(ModConfig.SERVER.msgLogoutPremium.get())));
+            return 0;
+        }
+        authManager.getSessionManager().endSession(data.getUsername(), data.getUuid());
+        authManager.audit(player, "LOGOUT", null);
+        player.connection.disconnect(Component.literal(colorize(ModConfig.SERVER.msgLogout.get())));
+        return 1;
+    }
+
+    /** {@code /unregister <пароль> <повтор>}: игрок сам удаляет свою пиратскую запись (бэкап делается). */
+    private static int handleSelfUnregister(ServerPlayer player, String password, String confirm) {
+        AuthManager authManager = HybridAuthMod.getAuthManager();
+        if (!authManager.isAuthenticated(player.getUUID())) {
+            player.sendSystemMessage(Component.literal(colorize(ModConfig.SERVER.msgLoginRequired.get())));
+            return 0;
+        }
+        PlayerData data = findPlayerData(authManager, player);
+        if (data == null || data.isPremium() || data.getPasswordHash() == null) {
+            player.sendSystemMessage(Component.literal(colorize(ModConfig.SERVER.msgPasswordAuthOnly.get())));
+            return 0;
+        }
+        if (!password.equals(confirm)) {
+            player.sendSystemMessage(Component.literal(colorize(ModConfig.SERVER.msgPasswordsDontMatch.get())));
+            return 0;
+        }
+        if (!authManager.loginAttemptStatus(player).allowed()) {
+            player.connection.disconnect(Component.literal(colorize(ModConfig.SERVER.msgTooManyAttempts.get())));
+            return 0;
+        }
+        if (password.length() > ModConfig.SERVER.maxPasswordLength.get()) {
+            return recordFailedAttempt(player, "UNREGISTER_FAILURE", "reason=wrong_password");
+        }
+
+        String storedHash = data.getPasswordHash();
+        return runPasswordCheck(player, () -> PasswordHasher.verify(password, storedHash),
+                verified -> finishSelfUnregister(player, data, verified));
+    }
+
+    private static void finishSelfUnregister(ServerPlayer player, PlayerData data, boolean verified) {
+        AuthManager authManager = HybridAuthMod.getAuthManager();
+        if (!verified) {
+            recordFailedAttempt(player, "UNREGISTER_FAILURE", "reason=wrong_password");
+            return;
+        }
+        if (!isStillStored(authManager, data)) {
+            sendInternalError(player);
+            return;
+        }
+        // Как и админское удаление: без бэкапа запись не удаляется
+        if (!authManager.getStorage().createBackup() || !authManager.getStorage().delete(data.getUuid())) {
+            sendInternalError(player);
+            return;
+        }
+        authManager.clearFailedAttempts(player);
+        authManager.getSessionManager().endSession(data.getUsername(), data.getUuid());
+        authManager.audit(
+                "ACCOUNT_SELF_UNREGISTERED",
+                data.getUsername(),
+                data.getUuid(),
+                AuthManager.ipFromSocketAddress(player.connection.getRemoteAddress()),
+                "backup=true");
+        player.connection.disconnect(Component.literal(colorize(ModConfig.SERVER.msgSelfUnregistered.get())));
+    }
+
+    /** Мягкий лимит регистраций по IP и по серверу; при отказе игрок получает сообщение. */
+    private static boolean registrationAllowed(ServerPlayer player, AuthManager authManager) {
+        String ip = AuthManager.ipFromSocketAddress(player.connection.getRemoteAddress());
+        RegistrationLimiter.Decision decision =
+                authManager.getRegistrationLimiter().check(ip, System.currentTimeMillis());
+        if (decision.allowed()) {
+            return true;
+        }
+        int minutes = Math.max(1, (decision.retryAfterSeconds() + 59) / 60);
+        player.sendSystemMessage(Component.literal(colorize(
+                ModConfig.SERVER.msgRegistrationLimited.get().replace("%minutes%", String.valueOf(minutes)))));
+        authManager.audit(player, "REGISTER_LIMITED", "retry_after=" + decision.retryAfterSeconds());
+        return false;
+    }
+
+    /** Фиксирует удачную регистрацию и предупреждает администраторов, если с этого IP их уже много. */
+    private static void afterRegistration(ServerPlayer player, AuthManager authManager) {
+        String ip = AuthManager.ipFromSocketAddress(player.connection.getRemoteAddress());
+        authManager.getRegistrationLimiter().record(ip, System.currentTimeMillis());
+
+        int others = IpAccountRules.countOtherCrackedOnIp(authManager.getStorage().listAll(), ip, player.getUUID());
+        if (!IpAccountRules.shouldWarn(others, ModConfig.SERVER.warnAccountsPerIp.get())) {
+            return;
+        }
+        int total = others + 1;
+        String text = ModConfig.SERVER.msgAdminManyAccounts.get()
+                .replace("%ip%", ip)
+                .replace("%count%", String.valueOf(total))
+                .replace("%nick%", player.getScoreboardName());
+        authManager.audit(player, "MANY_ACCOUNTS_ON_IP", "count=" + total);
+        HybridAuthMod.getLogger().warn("[HybridAuth] {}", colorize(text).replaceAll("§.", ""));
+        for (ServerPlayer admin : player.server.getPlayerList().getPlayers()) {
+            if (admin.hasPermissions(3)) {
+                admin.sendSystemMessage(Component.literal(colorize(text)));
+            }
+        }
+    }
+
     private static int handleRegister(ServerPlayer player, String password, String confirm) {
         AuthManager authManager = HybridAuthMod.getAuthManager();
 
@@ -159,6 +290,10 @@ public class AuthCommands {
         }
 
         if (!validateNewPassword(player, password, confirm)) {
+            return 0;
+        }
+
+        if (!registrationAllowed(player, authManager)) {
             return 0;
         }
 
@@ -189,6 +324,7 @@ public class AuthCommands {
         authManager.getStorage().save(data);
 
         player.sendSystemMessage(Component.literal(colorize(ModConfig.SERVER.msgRegisterSuccess.get())));
+        afterRegistration(player, authManager);
         authManager.authenticate(player, true, "REGISTER");
         sendRecoveryCode(player, registration.recoveryCode());
     }
@@ -617,7 +753,7 @@ public class AuthCommands {
 
         if (!rateLimit.allowed()) {
             player.connection.disconnect(Component.literal(colorize(ModConfig.SERVER.msgTooManyAttempts.get())));
-        } else if (sendFeedback && event.equals("LOGIN_FAILURE")) {
+        } else if (sendFeedback) {
             player.sendSystemMessage(Component.literal(colorize(ModConfig.SERVER.msgWrongPassword.get()
                     .replace("%attempt%", String.valueOf(attempts))
                     .replace("%max%", String.valueOf(maxAttempts)))));

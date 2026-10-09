@@ -41,6 +41,20 @@ public class ModConfig {
         public final ModConfigSpec.IntValue authTimeoutSeconds;
         public final ModConfigSpec.BooleanValue enableIpSession;
         public final ModConfigSpec.IntValue sessionDurationMinutes;
+        public final ModConfigSpec.IntValue registrationsPerIpPerHour;
+        public final ModConfigSpec.IntValue registrationsGlobalPer10Min;
+        public final ModConfigSpec.IntValue warnAccountsPerIp;
+
+        // Claim (перенос пиратки на лицензию)
+        public final ModConfigSpec.BooleanValue claimEnabled;
+        public final ModConfigSpec.IntValue claimMinutes;
+        public final ModConfigSpec.ConfigValue<String> msgClaimDisabled;
+        public final ModConfigSpec.ConfigValue<String> msgClaimOnlyCracked;
+        public final ModConfigSpec.ConfigValue<String> msgClaimNotLicensed;
+        public final ModConfigSpec.ConfigValue<String> msgClaimExplain;
+        public final ModConfigSpec.ConfigValue<String> msgClaimCreated;
+        public final ModConfigSpec.ConfigValue<String> msgClaimDone;
+        public final ModConfigSpec.ConfigValue<String> msgClaimFailed;
 
         // Skins
         public final ModConfigSpec.BooleanValue skinsEnabled;
@@ -51,6 +65,8 @@ public class ModConfig {
         public final ModConfigSpec.IntValue skinsCooldownSeconds;
         public final ModConfigSpec.IntValue skinsUrlCooldownSeconds;
         public final ModConfigSpec.IntValue skinsRequestTimeoutSeconds;
+        public final ModConfigSpec.ConfigValue<List<? extends String>> skinsGallery;
+        public final ModConfigSpec.ConfigValue<String> msgSkinGalleryTitle;
 
         // Skin messages
         public final ModConfigSpec.ConfigValue<List<? extends String>> msgSkinHelp;
@@ -119,6 +135,11 @@ public class ModConfig {
         public final ModConfigSpec.ConfigValue<String> msgDuplicateLogin;
         public final ModConfigSpec.ConfigValue<String> msgLicensedNameOccupied;
         public final ModConfigSpec.ConfigValue<String> msgPasswordCheckPending;
+        public final ModConfigSpec.ConfigValue<String> msgRegistrationLimited;
+        public final ModConfigSpec.ConfigValue<String> msgLogout;
+        public final ModConfigSpec.ConfigValue<String> msgLogoutPremium;
+        public final ModConfigSpec.ConfigValue<String> msgSelfUnregistered;
+        public final ModConfigSpec.ConfigValue<String> msgAdminManyAccounts;
 
         public ServerConfig(ModConfigSpec.Builder builder) {
             builder.push("general");
@@ -152,6 +173,26 @@ public class ModConfig {
                     .define("enableIpSession", true);
             sessionDurationMinutes = builder.comment("Время жизни IP-сессии, минут, от последнего входа по паролю или лицензии. Использование её не продлевает. (0 — до перезапуска сервера)")
                     .defineInRange("sessionDurationMinutes", 720, 0, Integer.MAX_VALUE);
+            registrationsPerIpPerHour = builder.comment("Сколько новых пиратских аккаунтов можно зарегистрировать с одного IP за час. Мягкий лимит против ботов: через час место освобождается, пользователей VPN надолго он не блокирует. (0 — без ограничения)")
+                    .defineInRange("registrationsPerIpPerHour", 5, 0, 1000);
+            registrationsGlobalPer10Min = builder.comment("Сколько новых пиратских аккаунтов может зарегистрироваться на всём сервере за 10 минут, с любых адресов. (0 — без ограничения)")
+                    .defineInRange("registrationsGlobalPer10Min", 40, 0, 10000);
+            warnAccountsPerIp = builder.comment("Предупредить администраторов в чате и в журнале аудита, когда с одного IP набирается столько пиратских аккаунтов. Игрока это не блокирует. (0 — не предупреждать)")
+                    .defineInRange("warnAccountsPerIp", 5, 0, 1000);
+            builder.pop();
+
+            builder.push("claim");
+            claimEnabled = builder.comment("Разрешить команду /claim: пират, купивший лицензию на свой ник, переносит все данные на лицензионный аккаунт")
+                    .define("enabled", true);
+            claimMinutes = builder.comment("Сколько минут после /claim confirm действует заявка: за это время нужно зайти с лицензионного клиента")
+                    .defineInRange("claimMinutes", 10, 1, 120);
+            msgClaimDisabled = builder.define("disabled", "§cПеренос на лицензию на этом сервере отключён.");
+            msgClaimOnlyCracked = builder.define("onlyCracked", "§cПеренос на лицензию нужен только пиратским аккаунтам с паролем.");
+            msgClaimNotLicensed = builder.define("notLicensed", "§cНик %nick% не зарегистрирован в Mojang как лицензионный, переносить пока нечего. Сначала купите лицензию на этот ник.");
+            msgClaimExplain = builder.define("explain", "§6Перенос на лицензию. §eВсе данные аккаунта %nick% (вещи, прогресс, whitelist, скин) переедут на ваш лицензионный аккаунт. Чтобы подтвердить, введите §6/claim confirm§e: вас отключит, а затем в течение %minutes% мин. зайдите с лицензионного клиента под ником §f%nick%§e.");
+            msgClaimCreated = builder.define("created", "§aЗаявка принята. Зайдите в течение %minutes% мин. с лицензионного клиента под ником %nick%: данные перенесутся автоматически. Пока заявка действует, на этот ник может не пускать с пиратского клиента.");
+            msgClaimDone = builder.define("done", "§aДанные вашего пиратского аккаунта перенесены на лицензионный. Пароль больше не нужен, добро пожаловать!");
+            msgClaimFailed = builder.define("failed", "§cНе удалось перенести данные на лицензию: %reason% Ничего не потеряно, обратитесь в техподдержку.");
             builder.pop();
 
             builder.push("skins");
@@ -174,6 +215,10 @@ public class ModConfig {
                     .defineInRange("urlCooldownSeconds", 1, 0, 86400);
             skinsRequestTimeoutSeconds = builder.comment("Сколько ждать создания скина в MineSkin, секунд")
                     .defineInRange("requestTimeoutSeconds", 45, 10, 300);
+            skinsGallery = builder.comment("Ники лицензионных аккаунтов для меню /skin gallery (до 36 штук): у каждого в меню голова с его настоящим скином, по клику игрок получает такой же скин. Пустой список — меню отключено")
+                    .defineListAllowEmpty("gallery", List.of("jeb_", "Dinnerbone", "Notch", "Grumm", "Searge", "slicedlime"),
+                            () -> "", value -> value instanceof String);
+            msgSkinGalleryTitle = builder.comment("Название меню /skin gallery").define("galleryTitle", "§5Выбор скина");
             builder.pop();
 
             builder.push("skinMessages");
@@ -250,6 +295,11 @@ public class ModConfig {
             msgAdminRecoveryUsage = builder.define("adminRecoveryUsage", "§7Игрок должен использовать /recover <код> <новый пароль> <повтор пароля>.");
             msgDuplicateLogin = builder.define("duplicateLogin", "§cЭтот ник уже играет на сервере с другого адреса. Дождитесь завершения старой сессии или обратитесь в техподдержку.");
             msgLicensedNameOccupied = builder.define("licensedNameOccupied", "§cЭтот ник принадлежит лицензионному аккаунту.\n§eЕсли это ваша пиратка — войдите с паролем и обратитесь в техподдержку для переноса на другой ник.\n§eЕсли вы владелец лицензии — обратитесь в техподдержку.");
+            msgRegistrationLimited = builder.define("registrationLimited", "§cС вашего адреса сейчас регистрируется слишком много аккаунтов. Повторите примерно через %minutes% мин. или обратитесь в техподдержку.");
+            msgLogout = builder.define("logout", "§aВы вышли из аккаунта. При следующем входе потребуется пароль.");
+            msgLogoutPremium = builder.define("logoutPremium", "§7Лицензионному аккаунту выход не нужен: вход проверяется автоматически.");
+            msgSelfUnregistered = builder.define("selfUnregistered", "§eАккаунт удалён. Ник свободен, а ваши вещи и прогресс остаются за ним: кто зарегистрирует этот ник, получит их.");
+            msgAdminManyAccounts = builder.define("adminManyAccounts", "§e[HybridAuth] С адреса %ip% уже %count% пиратских аккаунтов (новый: %nick%). Если это бот, удалите лишние через /hybridauth unregister.");
             msgPasswordCheckPending = builder.define("passwordCheckPending", "§eПроверка пароля уже выполняется, подождите.");
             builder.pop();
         }

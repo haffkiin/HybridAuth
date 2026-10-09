@@ -1,0 +1,4 @@
+# Скрипт запуска Gradle для Linux должен всегда храниться и выкладываться с переводами строк LF
+gradlew text eol=lf
+*.bat text eol=crlf
+*.sh text eol=lf

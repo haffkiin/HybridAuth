@@ -113,7 +113,7 @@ public final class AccountTransferService {
                 targetOnline,
                 storage.load(toId).isPresent() || storage.loadByExactUsername(toName).isPresent(),
                 files.hasWorldData(toId),
-                listsConflict(server, toName, toId),
+                listsConflict(server, toName, toId, source == null ? null : source.getUuid()),
                 license));
         if (rejection.isPresent()) {
             return new Report(false, List.of(rejection.get().message()));
@@ -122,7 +122,60 @@ public final class AccountTransferService {
         if (!execute) {
             return new Report(true, previewLines(server, files, source, fromName, toName));
         }
-        return execute(server, configDir, source, fromName, toName, toId, actor, files);
+        return execute(server, configDir, source, fromName, toName, toId, actor, files,
+                PlayerData.PlayerType.CRACKED, "ACCOUNT_TRANSFERRED");
+    }
+
+    /**
+     * Перенос пиратского аккаунта на лицензионный (команда /claim). Цель — UUID и ник Mojang, запись
+     * на цели получается лицензионной и без пароля. Ник и лицензию владельца проверяет вызывающий код.
+     *
+     * @param allowSourceOnline при проверке до заявки пират ещё на сервере, поэтому «в игре» не считаем отказом
+     */
+    public static Report runClaim(MinecraftServer server, Path configDir, PlayerData source,
+                                  UUID toId, String toName, boolean execute, boolean allowSourceOnline,
+                                  String actor) {
+        AuthManager authManager = HybridAuthMod.getAuthManager();
+        PlayerStorage storage = authManager.getStorage();
+        PlayerFileTransfer files = files(server);
+        String fromName = source.getUsername();
+        boolean sourceOnline = !allowSourceOnline
+                && (server.getPlayerList().getPlayerByName(fromName) != null
+                || server.getPlayerList().getPlayer(source.getUuid()) != null);
+        var sameNameOnline = server.getPlayerList().getPlayerByName(toName);
+        boolean targetOnline = server.getPlayerList().getPlayer(toId) != null
+                || (sameNameOnline != null && !sameNameOnline.getUUID().equals(source.getUuid()));
+
+        Optional<Rejection> rejection = AccountTransferRules.firstRejection(new Request(
+                source.isPremium() ? SourceKind.PREMIUM : SourceKind.CRACKED,
+                sourceOnline,
+                false,
+                true,
+                targetOnline,
+                storage.load(toId).isPresent(),
+                files.hasWorldData(toId),
+                listsConflict(server, toName, toId, source.getUuid()),
+                TargetLicense.FREE));
+        if (rejection.isPresent()) {
+            return new Report(false, List.of(claimMessage(rejection.get())));
+        }
+        if (!execute) {
+            return new Report(true, List.of("Перенос возможен: " + fromName + " → " + toName));
+        }
+        return execute(server, configDir, source, fromName, toName, toId, actor, files,
+                PlayerData.PlayerType.PREMIUM, "ACCOUNT_CLAIMED");
+    }
+
+    /** Те же причины отказа, но словами про лицензионный аккаунт. */
+    static String claimMessage(Rejection rejection) {
+        return switch (rejection) {
+            case SOURCE_ONLINE -> "Пиратский аккаунт сейчас на сервере: выйдите из игры под ним и повторите.";
+            case TARGET_ONLINE -> "Лицензионный ник сейчас на сервере: перенос возможен, только когда игрок вышел.";
+            case TARGET_ACCOUNT_EXISTS -> "На вашем лицензионном аккаунте уже есть запись HybridAuth: данные слить нельзя.";
+            case TARGET_WORLD_DATA_EXISTS -> "На вашем лицензионном аккаунте уже есть данные мира: данные слить нельзя.";
+            case TARGET_LIST_CONFLICT -> "Лицензионный аккаунт уже есть в списках операторов или банов: данные слить нельзя.";
+            default -> rejection.message();
+        };
     }
 
     private static List<String> previewLines(MinecraftServer server, PlayerFileTransfer files,
@@ -142,13 +195,15 @@ public final class AccountTransferService {
         lines.add("Операторы: " + (op != null ? "уровень " + op.getLevel() + ", будет перенесён" : "нет"));
         lines.add("Бан-лист: " + (ban != null ? "будет перенесён" : "нет"));
         List<String> handlers = handlerNames();
+        lines.add("Питомцы: владелец сменится у загруженных сейчас и у остальных при загрузке чанка");
         lines.add("Обработчики других модов: " + (handlers.isEmpty() ? "нет" : String.join(", ", handlers)));
         lines.add("Для выполнения: /hybridauth transfer " + fromName + " " + toName + " confirm");
         return lines;
     }
 
     private static Report execute(MinecraftServer server, Path configDir, PlayerData source,
-                                  String fromName, String toName, UUID toId, String actor, PlayerFileTransfer files) {
+                                  String fromName, String toName, UUID toId, String actor, PlayerFileTransfer files,
+                                  PlayerData.PlayerType targetType, String auditEvent) {
         AuthManager authManager = HybridAuthMod.getAuthManager();
         PlayerStorage storage = authManager.getStorage();
         UUID fromId = source.getUuid();
@@ -182,7 +237,7 @@ public final class AccountTransferService {
                 storage.save(source);
                 storage.delete(toId);
             });
-            storage.save(copyRecord(source, toId, toName));
+            storage.save(buildTargetRecord(source, toId, toName, targetType));
             storage.delete(fromId);
             authManager.getSessionManager().endSession(fromName, fromId);
 
@@ -209,8 +264,13 @@ public final class AccountTransferService {
                 applied.add(handler.name());
             }
 
+            // 5a. Питомцы: владелец меняется у загруженных сейчас, у остальных при загрузке чанка
+            PetOwnership.Moved pets = HybridAuthMod.getPetOwnership().move(server, fromId, toId);
+            undo.push(pets.undo()::run);
+            applied.add("питомцы, сразу: " + pets.loadedNow());
+
             storage.flush();
-            authManager.audit("ACCOUNT_TRANSFERRED", fromName, fromId, "-",
+            authManager.audit(auditEvent, fromName, fromId, "-",
                     "to=" + toName + ";to_uuid=" + toId + ";by=" + actor
                             + ";backup=" + backupDir.getFileName() + ";handlers=" + applied);
             LOGGER.warn("[HybridAuth] Аккаунт {} перенесён на ник {} ({}).", fromName, toName, actor);
@@ -218,7 +278,9 @@ public final class AccountTransferService {
             List<String> lines = new ArrayList<>();
             lines.add("Перенос выполнен: " + fromName + " → " + toName);
             lines.add("Бэкап: " + backupDir);
-            lines.add("Игрок заходит под новым ником " + toName + " и вводит прежний пароль.");
+            lines.add(targetType == PlayerData.PlayerType.PREMIUM
+                    ? "Игрок заходит с лицензии под ником " + toName + ", пароль не нужен."
+                    : "Игрок заходит под новым ником " + toName + " и вводит прежний пароль.");
             return new Report(true, lines);
         } catch (Exception exception) {
             LOGGER.error("[HybridAuth] Перенос {} → {} не выполнен, откат.", fromName, toName, exception);
@@ -291,10 +353,11 @@ public final class AccountTransferService {
     }
 
     /** Конфликт: в whitelist есть другой UUID с этим ником, либо на новом UUID уже есть op или бан. */
-    private static boolean listsConflict(MinecraftServer server, String toName, UUID toId) {
+    private static boolean listsConflict(MinecraftServer server, String toName, UUID toId, UUID fromId) {
         for (UserWhiteListEntry entry : server.getPlayerList().getWhiteList().getEntries()) {
             GameProfile profile = profileOf(entry);
-            if (profile != null && toName.equals(profile.getName()) && !toId.equals(profile.getId())) {
+            if (profile != null && toName.equals(profile.getName()) && !toId.equals(profile.getId())
+                    && !profile.getId().equals(fromId)) {
                 return true;
             }
         }
@@ -302,13 +365,16 @@ public final class AccountTransferService {
                 || findEntry(server.getPlayerList().getBans().getEntries(), toId) != null;
     }
 
-    private static PlayerData copyRecord(PlayerData source, UUID toId, String toName) {
-        PlayerData copy = new PlayerData(toId, toName, PlayerData.PlayerType.CRACKED);
-        copy.setPasswordHash(source.getPasswordHash());
-        copy.setRecoveryCodeHash(source.getRecoveryCodeHash());
+    private static PlayerData buildTargetRecord(PlayerData source, UUID toId, String toName,
+                                                PlayerData.PlayerType targetType) {
+        PlayerData copy = new PlayerData(toId, toName, targetType);
         copy.setRegisteredAt(source.getRegisteredAt());
         copy.setLastLoginAt(source.getLastLoginAt());
         copy.setLastLoginIp(source.getLastLoginIp());
+        if (targetType == PlayerData.PlayerType.CRACKED) {
+            copy.setPasswordHash(source.getPasswordHash());
+            copy.setRecoveryCodeHash(source.getRecoveryCodeHash());
+        }
         return copy;
     }
 

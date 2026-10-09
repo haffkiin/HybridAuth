@@ -6,7 +6,9 @@ import com.hybridauth.auth.MojangApiClient;
 import com.hybridauth.api.HybridAuthApi;
 import com.hybridauth.auth.SessionManager;
 import com.hybridauth.audit.AuthAuditLogger;
+import com.hybridauth.claim.ClaimRegistry;
 import com.hybridauth.commands.AuthCommands;
+import com.hybridauth.commands.ClaimCommands;
 import com.hybridauth.commands.SkinCommands;
 import com.hybridauth.config.ModConfig;
 import com.hybridauth.events.AuthEventHandler;
@@ -17,6 +19,8 @@ import com.hybridauth.skin.SkinService;
 import com.hybridauth.skin.SkinStorage;
 import com.hybridauth.storage.JsonPlayerStorage;
 import com.hybridauth.storage.PlayerStorage;
+import com.hybridauth.transfer.OwnerRedirects;
+import com.hybridauth.transfer.PetOwnership;
 import com.hybridauth.whitelist.WhitelistGatewayImpl;
 import com.hybridauth.whitelist.WhitelistRepairService;
 import net.neoforged.bus.api.IEventBus;
@@ -44,8 +48,10 @@ public class HybridAuthMod {
     private static AuthManager authManager;
     private static MojangApiClient mojangClient;
     private static SkinService skinService;
+    private static PetOwnership petOwnership;
     private static String modVersion = "dev";
     private static final PremiumSpawnProtection PREMIUM_SPAWN_PROTECTION = new PremiumSpawnProtection();
+    private static final ClaimRegistry CLAIM_REGISTRY = new ClaimRegistry();
     
     public HybridAuthMod(IEventBus modEventBus, ModContainer modContainer) {
         modVersion = modContainer.getModInfo().getVersion().toString();
@@ -74,6 +80,8 @@ public class HybridAuthMod {
         AuthAuditLogger auditLogger = new AuthAuditLogger(FMLPaths.CONFIGDIR.get());
         
         authManager = new AuthManager(storage, sessionManager, auditLogger);
+        petOwnership = new PetOwnership(new OwnerRedirects(
+                FMLPaths.CONFIGDIR.get().resolve("hybridauth").resolve("pet_owner_redirects.json")));
         skinService = new SkinService(
                 new SkinStorage(FMLPaths.CONFIGDIR.get().resolve("hybridauth")),
                 mojangClient,
@@ -112,7 +120,7 @@ public class HybridAuthMod {
             authManager.shutdown();
         }
         if (skinService != null) {
-            skinService.mineSkin().shutdown();
+            skinService.shutdown();
         }
         HybridAuthApi.clear();
     }
@@ -120,6 +128,7 @@ public class HybridAuthMod {
     private void onRegisterCommands(RegisterCommandsEvent event) {
         AuthCommands.register(event.getDispatcher());
         SkinCommands.register(event.getDispatcher());
+        ClaimCommands.register(event.getDispatcher());
     }
 
     public static AuthManager getAuthManager() {
@@ -134,6 +143,10 @@ public class HybridAuthMod {
         return skinService;
     }
 
+    public static PetOwnership getPetOwnership() {
+        return petOwnership;
+    }
+
     /** Применяет настройки скинов из конфига (при старте и по /hybridauth reload). */
     public static void applySkinConfig() {
         if (skinService == null) {
@@ -143,10 +156,17 @@ public class HybridAuthMod {
                 ModConfig.SERVER.skinsMineskinApiKey.get(),
                 ModConfig.SERVER.skinsRequestTimeoutSeconds.get());
         skinService.mojangSkins().setTimeoutMs(ModConfig.SERVER.mojangApiTimeoutMs.get());
+        if (ModConfig.SERVER.skinsEnabled.get()) {
+            skinService.prefetchGallery(ModConfig.SERVER.skinsGallery.get());
+        }
     }
 
     public static PremiumSpawnProtection getPremiumSpawnProtection() {
         return PREMIUM_SPAWN_PROTECTION;
+    }
+
+    public static ClaimRegistry getClaimRegistry() {
+        return CLAIM_REGISTRY;
     }
 
     public static Logger getLogger() {

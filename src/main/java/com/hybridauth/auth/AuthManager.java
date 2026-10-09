@@ -49,6 +49,7 @@ public class AuthManager {
      */
     private final Set<UUID> licensedNameConflicts = ConcurrentHashMap.newKeySet();
     private final LoginRateLimiter loginRateLimiter = new LoginRateLimiter(300, 300);
+    private final RegistrationLimiter registrationLimiter = new RegistrationLimiter(5, 40);
 
     public AuthManager(PlayerStorage storage, SessionManager sessionManager, AuthAuditLogger auditLogger) {
         this.storage = storage;
@@ -63,6 +64,13 @@ public class AuthManager {
         loginRateLimiter.configure(
                 ModConfig.SERVER.loginAttemptWindowSeconds.get(),
                 ModConfig.SERVER.loginLockoutSeconds.get());
+        registrationLimiter.configure(
+                ModConfig.SERVER.registrationsPerIpPerHour.get(),
+                ModConfig.SERVER.registrationsGlobalPer10Min.get());
+    }
+
+    public RegistrationLimiter getRegistrationLimiter() {
+        return registrationLimiter;
     }
 
     public boolean isAuthenticated(UUID uuid) {
