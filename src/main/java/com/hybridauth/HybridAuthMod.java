@@ -51,6 +51,7 @@ public class HybridAuthMod {
     private static PetOwnership petOwnership;
     private static String modVersion = "dev";
     private static final PremiumSpawnProtection PREMIUM_SPAWN_PROTECTION = new PremiumSpawnProtection();
+    private static final com.hybridauth.gui.AuthPresenter AUTH_PRESENTER = new com.hybridauth.gui.AuthPresenter();
     private static final ClaimRegistry CLAIM_REGISTRY = new ClaimRegistry();
     
     public HybridAuthMod(IEventBus modEventBus, ModContainer modContainer) {
@@ -159,6 +160,10 @@ public class HybridAuthMod {
         if (ModConfig.SERVER.skinsEnabled.get()) {
             skinService.prefetchGallery(ModConfig.SERVER.skinsGallery.get());
         }
+    }
+
+    public static com.hybridauth.gui.AuthPresenter getAuthPresenter() {
+        return AUTH_PRESENTER;
     }
 
     public static PremiumSpawnProtection getPremiumSpawnProtection() {

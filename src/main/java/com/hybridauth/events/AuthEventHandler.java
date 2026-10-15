@@ -61,6 +61,9 @@ public class AuthEventHandler {
             if (needsAuthProtection(player)) {
                 authLocks.put(player.getUUID(), AuthLock.capture(player));
                 protectUnauthenticatedPlayer(player);
+                HybridAuthMod.getAuthPresenter().begin(player,
+                        authManager.getStorage().load(player.getUUID()).isPresent()
+                                || authManager.getStorage().loadByExactUsername(player.getScoreboardName()).isPresent());
             } else {
                 authLocks.remove(player.getUUID());
             }
@@ -89,6 +92,7 @@ public class AuthEventHandler {
             conflictNoticeSent.remove(player.getUUID());
             authLocks.remove(player.getUUID());
             HybridAuthMod.getPremiumSpawnProtection().clear(player);
+            HybridAuthMod.getAuthPresenter().finish(player);
         }
     }
 
@@ -102,6 +106,7 @@ public class AuthEventHandler {
             }
 
             protectUnauthenticatedPlayer(player);
+            HybridAuthMod.getAuthPresenter().tick(player);
 
             long now = System.currentTimeMillis();
             long lastMsg = lastMessageTime.getOrDefault(player.getUUID(), 0L);

@@ -39,6 +39,15 @@ public class ModConfig {
         public final ModConfigSpec.IntValue loginAttemptWindowSeconds;
         public final ModConfigSpec.IntValue loginLockoutSeconds;
         public final ModConfigSpec.IntValue authTimeoutSeconds;
+        public final ModConfigSpec.BooleanValue authVisuals;
+        public final ModConfigSpec.ConfigValue<String> authTitleLogin;
+        public final ModConfigSpec.ConfigValue<String> authSubtitleLogin;
+        public final ModConfigSpec.ConfigValue<String> authTitleRegister;
+        public final ModConfigSpec.ConfigValue<String> authSubtitleRegister;
+        public final ModConfigSpec.ConfigValue<String> authBarLogin;
+        public final ModConfigSpec.ConfigValue<String> authBarRegister;
+        public final ModConfigSpec.ConfigValue<String> authTitleWelcome;
+        public final ModConfigSpec.ConfigValue<String> authTitleRegistered;
         public final ModConfigSpec.BooleanValue enableIpSession;
         public final ModConfigSpec.IntValue sessionDurationMinutes;
         public final ModConfigSpec.IntValue registrationsPerIpPerHour;
@@ -169,6 +178,16 @@ public class ModConfig {
             loginLockoutSeconds = builder.comment("На сколько блокируется вход после превышения попыток, секунд")
                     .defineInRange("loginLockoutSeconds", 300, 30, 86400);
             authTimeoutSeconds = builder.comment("Время на вход или регистрацию до отключения, секунд (0 — без ограничения)").defineInRange("authTimeoutSeconds", 60, 0, 600);
+            authVisuals = builder.comment("Показывать заголовок и боссбар с отсчётом на экране входа и приветствие после входа")
+                    .define("authVisuals", true);
+            authTitleLogin = builder.define("authTitleLogin", "§6Вход");
+            authSubtitleLogin = builder.define("authSubtitleLogin", "§e/login <пароль>");
+            authTitleRegister = builder.define("authTitleRegister", "§6Регистрация");
+            authSubtitleRegister = builder.define("authSubtitleRegister", "§e/register <пароль> <пароль>");
+            authBarLogin = builder.define("authBarLogin", "§eВведите /login — осталось §6%seconds% §eс");
+            authBarRegister = builder.define("authBarRegister", "§eВведите /register — осталось §6%seconds% §eс");
+            authTitleWelcome = builder.define("authTitleWelcome", "§aС возвращением!");
+            authTitleRegistered = builder.define("authTitleRegistered", "§aДобро пожаловать!");
             enableIpSession = builder.comment("Запоминать IP, чтобы не вводить пароль при каждом входе. Отключите, если у игроков общие адреса (NAT, мобильные операторы)")
                     .define("enableIpSession", true);
             sessionDurationMinutes = builder.comment("Время жизни IP-сессии, минут, от последнего входа по паролю или лицензии. Использование её не продлевает. (0 — до перезапуска сервера)")

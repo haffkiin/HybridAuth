@@ -210,6 +210,9 @@ public class AuthManager {
             LicenseNotifier.notifyPremiumVerified(player);
         }
 
+        com.hybridauth.HybridAuthMod.getAuthPresenter().success(player, "REGISTER".equals(method));
+        com.hybridauth.api.AuthListeners.fireAuthenticated(player, method == null ? "UNKNOWN" : method);
+
         LOGGER.info("[HybridAuth] Игрок {} ({}) авторизован.", username, data.getType());
     }
 
